@@ -1,0 +1,29 @@
+# build output
+build/
+/network-file-server
+/network-file-client
+/network-file-gui
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+
+# runtime data (never commit)
+data/*
+!data/.gitkeep
+storage/*
+!storage/.gitkeep
+logs/*
+!logs/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.log
+config/demo-credentials.txt
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+core
+*.part
