@@ -3,7 +3,7 @@
 ## Automated (run `cd build && ctest --output-on-failure`)
 | Suite | Cases / checks | Notes |
 |---|---|---|
-| `test_unit` | 12 / 179 | no network needed |
+| `test_unit` | 13 / 190 | no network needed |
 | `test_integration` | 23 / 538 | starts a real `LinSFTServer` on an ephemeral port per test, temp dir, real SQLite |
 | `test_gui` | 6 / 105 | `QT_QPA_PLATFORM=offscreen` (set by CTest) |
 | `test_e2e_cli` | 39 checks | real server + CLI processes, `SIGINT` shutdown |

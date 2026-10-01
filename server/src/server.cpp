@@ -33,7 +33,12 @@ bool ServerConfig::loadFile(const std::string& path, std::string& err) {
         if (line.empty() || line[0] == '#') continue;
         size_t eq = line.find('=');
         if (eq == std::string::npos) { err = path + ":" + std::to_string(ln) + ": expected key = value"; return false; }
-        std::string k = trim(line.substr(0, eq)), v = trim(line.substr(eq + 1));
+        std::string k = trim(line.substr(0, eq)), v = line.substr(eq + 1);
+        size_t hash = v.find(" #");  // inline comment: whitespace followed by '#'
+        size_t tabHash = v.find("\t#");
+        if (tabHash != std::string::npos && (hash == std::string::npos || tabHash < hash)) hash = tabHash;
+        if (hash != std::string::npos) v.erase(hash);
+        v = trim(v);
         try {
             if (k == "bind_address") bindAddress = v;
             else if (k == "port") { long p = std::stol(v); if (p < 0 || p > 65535) throw std::out_of_range("port"); port = uint16_t(p); }

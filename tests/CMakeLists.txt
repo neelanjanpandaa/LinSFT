@@ -7,6 +7,7 @@ function(linsft_test name)
 endfunction()
 
 linsft_test(test_unit test_unit.cpp)
+target_compile_definitions(test_unit PRIVATE LINSFT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 linsft_test(test_integration test_integration.cpp)
 
 # End-to-end test of the real binaries (server process, CLI client, SIGINT shutdown).

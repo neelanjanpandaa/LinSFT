@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstdlib>
+#include <cstring>
 
 #include "linsft/crypto.h"
 #include "linsft/database.h"
@@ -225,6 +226,31 @@ TEST(sqlite_prepared_statements_and_injection) {
         CHECK_EQ(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?", {std::string(t)}).size(), size_t(1));
     db.close();
     unlink(tmpl); unlink((std::string(tmpl) + "-wal").c_str()); unlink((std::string(tmpl) + "-shm").c_str());
+}
+
+#include "linsft/server.h"
+
+TEST(shipped_config_file_parses) {
+    ServerConfig c;
+    std::string err;
+    CHECK(c.loadFile(std::string(LINSFT_SOURCE_DIR) + "/config/server.conf", err));  // the file users actually get
+    CHECK_EQ(c.bindAddress, std::string("127.0.0.1"));
+    CHECK_EQ(c.port, uint16_t(9090));
+    CHECK_EQ(c.storageDir, std::string("storage"));
+    CHECK_EQ(c.dbPath, std::string("data/linsft.db"));
+    CHECK_EQ(c.maxFileSize, uint64_t(536870912));
+    CHECK_EQ(c.pbkdf2Iterations, 100000u);
+    char tmpl[] = "/tmp/linsft-cfg-XXXXXX";
+    int fd = mkstemp(tmpl);
+    const char* bad = "port = 99999\n";
+    CHECK(write(fd, bad, strlen(bad)) > 0);
+    close(fd);
+    ServerConfig d;
+    CHECK(!d.loadFile(tmpl, err));                      // invalid value is reported, not ignored
+    CHECK(err.find("port") != std::string::npos);
+    ServerConfig e2;
+    CHECK(!e2.loadFile("/nonexistent/file.conf", err));
+    unlink(tmpl);
 }
 
 int main() { return tf::runAll("unit"); }

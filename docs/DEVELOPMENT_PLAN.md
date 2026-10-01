@@ -14,3 +14,4 @@
 1. Upload fields were parsed in a different order by server and client (found by CLI smoke test).
 2. After a protocol violation the server closed with unread data pending, producing a TCP RST instead of FIN so the client could lose the error reply — now half-closes and drains first.
 3. `INSERT` + `last_insert_rowid()` raced between threads, mis-assigning transfer-history rows under concurrency — replaced by atomic `DatabaseManager::insert()`.
+4. The shipped `config/server.conf` (with inline `# comments`) was rejected by the config parser; found only when the README procedure was run from a fresh clone. Parser fixed and `shipped_config_file_parses` added so the real file is now under test.
