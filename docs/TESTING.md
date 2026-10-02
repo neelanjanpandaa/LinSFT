@@ -3,10 +3,10 @@
 ## Automated (run `cd build && ctest --output-on-failure`)
 | Suite | Cases / checks | Notes |
 |---|---|---|
-| `test_unit` | 13 / 190 | no network needed |
-| `test_integration` | 23 / 538 | starts a real `LinSFTServer` on an ephemeral port per test, temp dir, real SQLite |
-| `test_gui` | 6 / 105 | `QT_QPA_PLATFORM=offscreen` (set by CTest) |
-| `test_e2e_cli` | 39 checks | real server + CLI processes, `SIGINT` shutdown |
+| `test_unit` | 16 / 247 | no network needed |
+| `test_integration` | 27 / 624 | starts a real `LinSFTServer` on an ephemeral port per test, temp dir, real SQLite |
+| `test_gui` | 6 / 110 | `QT_QPA_PLATFORM=offscreen` (set by CTest) |
+| `test_e2e_cli` | 57 checks | real server + CLI processes, `SIGINT` shutdown |
 
 All tests execute real code paths; none stub the network, the database or the filesystem.
 
@@ -42,3 +42,5 @@ All tests execute real code paths; none stub the network, the database or the fi
 | 11 | Logout, log in as `admin` | Extra tabs: System Monitor, Users, Audit Log |
 | 12 | Users → select user → Change Role | Role changes; audit log shows `USER_SET_ROLE` |
 | 13 | Ctrl+C in server terminal | "shutting down gracefully", process exits 0; GUI reports session ended on next action |
+
+See [`TestCases.md`](TestCases.md) for the full list of 45 numbered test cases (steps, expected result, covering automated test).

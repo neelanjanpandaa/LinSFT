@@ -18,6 +18,7 @@ rules of the RBAC model, must not be crashable by malformed input, and must keep
 | Input validation | usernames, passwords, names, SHA-256 hex, roles, lengths | `name_user_password_validation`, `malformed_and_hostile_network_input` |
 | SQL injection | prepared statements with bound parameters only; `instr()` instead of `LIKE` | `sqlite_prepared_statements_and_injection`, `directories_rename_search_info_delete` |
 | Integrity | SHA-256 verified server-side (upload) and client-side (download) | `checksum_mismatch_detected_and_rejected` |
+| Private home directories | `canWriteInto()`: `/users/<name>` writable only by its owner or an admin; system directories protected | `storage_layout_write_rules`, `default_layout_home_dirs_and_write_rules` |
 | Atomic publish | staging file → verify → `fsync` → `rename(2)` + DB transaction | `upload_download_roundtrip_sha256`, `client_disconnect_mid_transfer_cleans_up` |
 | Safe file modes | files 0640, dirs 0750, DB 0600, credentials 0600 | `upload_download_roundtrip_sha256`, `directories_*`, `test_e2e_cli` |
 | Protocol robustness | magic/version/length checks, bounds-checked reader, 1 MiB cap, clean close | `protocol_*`, `malformed_and_hostile_network_input` |

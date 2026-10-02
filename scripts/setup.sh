@@ -10,6 +10,6 @@ if ! command -v cmake >/dev/null || ! command -v g++ >/dev/null || [ ! -f /usr/i
 else
   echo "Dependencies already installed."
 fi
-mkdir -p data storage logs config
-chmod 750 storage data logs
+mkdir -p database server_storage logs config
+chmod 750 server_storage database logs
 echo "Setup complete. Next: ./scripts/build.sh"

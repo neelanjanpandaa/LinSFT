@@ -17,7 +17,7 @@ cmake .. -DLINSFT_BUILD_GUI=$GUI
 make -j"$(nproc)"
 cd ..
 echo
-echo "Built: ./network-file-server  ./network-file-client  $( [ -e network-file-gui ] && echo ./network-file-gui || echo '(GUI skipped)')"
+echo "Built: ./file_server (network-file-server)  ./file_client (network-file-client)  $( [ -e network-file-gui ] && echo ./network-file-gui || echo "(GUI skipped)")"
 if [ "$TEST" = 1 ]; then
   (cd build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure)
 fi

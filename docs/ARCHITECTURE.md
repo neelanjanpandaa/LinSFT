@@ -23,8 +23,8 @@ Responses echo the request id and type | `0x8000`, and start with `u16 status` +
 Every request except `PING`, `REGISTER`, `LOGIN` begins with the session token.
 
 ## Storage model
-* Virtual absolute paths (`/docs/report.pdf`) map 1:1 to `storage/docs/report.pdf`. Directories are real directories (`0750`), files are real files (`0640`).
-* Uploads are written to `storage/.tmp/up-<random>` (`O_EXCL|O_NOFOLLOW`), hashed while written, verified, `fsync`'d, then published with `rename(2)` inside a DB transaction. `.`-prefixed names are rejected so users can never address `.tmp`.
+* Virtual absolute paths (`/docs/report.pdf`) map 1:1 to `server_storage/docs/report.pdf`. Directories are real directories (`0750`), files are real files (`0640`).
+* Uploads are written to `server_storage/.tmp/up-<random>` (`O_EXCL|O_NOFOLLOW`), hashed while written, verified, `fsync`'d, then published with `rename(2)` inside a DB transaction. `.`-prefixed names are rejected so users can never address `.tmp`.
 * On start-up, stale staging files are removed and `IN_PROGRESS` transfer rows are marked `FAILED`.
 
 ## Concurrency model
@@ -39,3 +39,15 @@ A kernel module is **not** part of the project. If one were added, a character d
 
 ## Software / hardware architecture notes
 Layered client–server design with a thin protocol boundary; the server is I/O bound (disk + network), so thread-per-client is adequate. Chunking bounds memory per transfer to 64 KiB regardless of file size, and `fsync` before publish gives durability against power loss.
+
+## Storage layout and home directories
+On start-up `FileManager::ensureDefaultLayout()` creates four system-owned directories (`owner_id = 0`): `/public`, `/documents`, `/users`, `/temporary`.
+`/users/<name>` is each account's private home; it is created at registration and at login (idempotent) and recorded in `users.home_directory`.
+Rules (all in `PermissionService`, none in handlers):
+* `canWriteInto(path)`: `/users` is admin-only; `/users/<name>/…` only that user or an admin; everything else is open to all roles.
+* `isPublicPath(path)`: uploads under `/public` are stored with `shared = 1`.
+* Ownership rules (rename/delete/share/rmdir) still apply, so system directories can only be removed or renamed by an admin.
+
+## Object-oriented user model
+`common/include/linsft/user.h`: abstract `User` (`id`, `username`, `role`, `login()`, `logout()`, pure virtual `canDelete(ownerId)`) with `Student`, `Faculty` and `Admin`.
+`User::create(Principal)` is a factory; `PermissionService::canDeleteFile()` delegates to it, and a unit test asserts both views always agree.

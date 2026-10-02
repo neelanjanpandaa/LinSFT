@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -x ./network-file-server ] || ./scripts/build.sh
-mkdir -p data storage logs config
+mkdir -p database server_storage logs config
 
 if [ ! -f config/demo-credentials.txt ] || [ "${1:-}" = "--reset" ]; then
   echo "Creating demo accounts..."
@@ -20,7 +20,7 @@ echo
 ./network-file-server --quiet &
 SRV=$!
 trap 'kill -INT $SRV 2>/dev/null; wait $SRV 2>/dev/null || true' EXIT
-for _ in $(seq 1 50); do (exec 3<>/dev/tcp/127.0.0.1/9090) 2>/dev/null && break; sleep 0.1; done
+for _ in $(seq 1 50); do (exec 3<>/dev/tcp/127.0.0.1/5000) 2>/dev/null && break; sleep 0.1; done
 
 if [ -x ./network-file-gui ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
   ./network-file-gui

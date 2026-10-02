@@ -17,7 +17,7 @@ desktop GUI and a full command-line client.
 13. [Demo credentials / setup](#13-demo-credentials--setup) · 14. [Testing](#14-testing) · 15. [Troubleshooting](#15-troubleshooting) ·
 16. [Limitations](#16-project-limitations) · 17. [Future enhancements](#17-future-enhancements)
 
-More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY.md`](docs/SECURITY.md), [`docs/TESTING.md`](docs/TESTING.md),
+More detail: [`docs/SRS.md`](docs/SRS.md), [`docs/SDLC.md`](docs/SDLC.md), [`docs/TestCases.md`](docs/TestCases.md), [`docs/POSTER_COMPLIANCE.md`](docs/POSTER_COMPLIANCE.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY.md`](docs/SECURITY.md), [`docs/TESTING.md`](docs/TESTING.md),
 [`docs/DEMO.md`](docs/DEMO.md), [`docs/UML.md`](docs/UML.md), [`docs/PRD.md`](docs/PRD.md), [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
 
 ---
@@ -34,7 +34,9 @@ SHA-256. What a user can see and do depends on their role (`STUDENT`, `FACULTY`,
 |---|---|
 | Authentication | Register, login, logout, random 256-bit session tokens, idle expiry, brute-force lockout (5 failures → 60 s) |
 | RBAC | `ADMIN` / `FACULTY` / `STUDENT`, one central `PermissionService`, role changes apply to live sessions |
-| Files | Upload, download, list, search, info, rename, delete, share/unshare (private by default) |
+| Files | Upload, download, list, search, info (incl. Linux permission bits), rename, delete, share/unshare (private by default) |
+| Storage layout | Default `public/ documents/ users/ temporary/`; private per-user home folders (`users.home_directory`); uploads to `public/` auto-shared |
+| OOP model | Abstract `User` with `Student` / `Faculty` / `Admin` subclasses (polymorphic `canDelete()`), wired into `PermissionService` |
 | Directories | Create, remove (empty only), rename (descendants follow) |
 | Administration | List users, change role, delete user (files reassigned), last-admin protection, audit log |
 | Monitoring | Per-user transfer history (all users for faculty/admin), audit trail, **System Monitor** (`/proc`, `/sys`, `statvfs`) |
@@ -62,7 +64,7 @@ flowchart TD
         TM --> DB
         FM --> DB
         AUD --> DB
-        TM --> FS[("Linux filesystem<br/>storage/ · mode 0640/0750")]
+        TM --> FS[("Linux filesystem<br/>server_storage/ · mode 0640/0750")]
         FM --> FS
     end
 ```
@@ -137,6 +139,7 @@ erDiagram
             text pw_hash
             int iterations
             text role
+            text home_directory
             int created_at
             int last_login }
     files { int id PK
@@ -177,7 +180,7 @@ erDiagram
                  text client_addr
                  text detail }
 ```
-(`transfers` and `audit_logs` deliberately have no foreign key so history survives user deletion.)
+(`transfers` and `audit_logs` deliberately have no foreign key so history survives user deletion. `directories.owner_id = 0` means "system", used by the four default directories.)
 
 ## 4. Technology stack
 
@@ -215,7 +218,7 @@ Summary (full detail in [`docs/SECURITY.md`](docs/SECURITY.md)):
 * **Sessions:** 256-bit random tokens from `/dev/urandom`, validated on *every* request, 30 min idle expiry, revoked on logout / user deletion, role changes take effect immediately.
 * **Brute force:** 5 failed logins ⇒ 60 s lockout per username.
 * **Path safety:** all paths are virtual, canonicalised and *rejected* if they contain `..`, backslashes, control characters or hidden (`.`-prefixed) names; files are opened with `O_NOFOLLOW`; symlinks planted in storage are never followed.
-* **Integrity:** SHA-256 computed by sender and receiver; uploads are staged in `storage/.tmp` and only `rename(2)`d into place after the checksum matches.
+* **Integrity:** SHA-256 computed by sender and receiver; uploads are staged in `server_storage/.tmp` and only `rename(2)`d into place after the checksum matches.
 * **SQL:** every statement is prepared with bound parameters; no string-built SQL with user data (`instr()` replaces `LIKE` so search has no wildcard injection).
 * **Protocol:** magic + version check, 1 MiB payload cap, bounds-checked reader, unknown/truncated frames handled without crashing; malformed frames close the connection cleanly.
 * **Audit:** logins, logouts, every file operation and every *denied* or *rejected* attempt are written to `audit_logs` and the server log (control characters stripped to prevent log forging).
@@ -257,7 +260,7 @@ make -j$(nproc)
 cd ..
 ```
 
-or simply `./scripts/setup.sh && ./scripts/build.sh`. Add `--no-gui` to `build.sh` (or `cmake -DLINSFT_BUILD_GUI=OFF ..`) to build without Qt.
+or simply `./scripts/setup.sh && ./scripts/build.sh`, or `make deps && make` (the `Makefile` is a thin wrapper around CMake; `make test`, `make clean`, `make distclean` also exist). Add `--no-gui` to `build.sh` (or `cmake -DLINSFT_BUILD_GUI=OFF ..`) to build without Qt.
 If Qt6 is missing, CMake prints a warning and still builds the server and CLI.
 Build output is placed in `build/bin/`, and convenience symlinks `./network-file-server`, `./network-file-client`, `./network-file-gui` are created in the project root.
 
@@ -265,46 +268,98 @@ Build output is placed in `build/bin/`, and convenience symlinks `./network-file
 
 ```bash
 # one-time: create demo accounts (random passwords, saved to config/demo-credentials.txt, mode 0600)
-./network-file-server --seed-demo
+./file_server --seed-demo
 
-# Terminal 1
-./network-file-server              # listens on 127.0.0.1:9090 ; Ctrl+C stops it gracefully
+# Terminal 1 — server (default port 5000; Ctrl+C stops it gracefully)
+./file_server 5000
 
-# Terminal 2
-./network-file-gui                 # Qt6 desktop client
+# Terminal 2 — GUI client
+./network-file-gui
 # or the guaranteed CLI fallback:
-./network-file-client
+./file_client 127.0.0.1 5000
 ```
 
-`./scripts/run_demo.sh` does all of this in one command. Options: `--config FILE`, `--port N`, `--bind ADDR`, `--quiet`.
-Remote access: set `bind_address = 0.0.0.0` in `config/server.conf` and start clients with `--host SERVER_IP`.
+`file_server` / `file_client` are the short names for `network-file-server` / `network-file-client` (both exist after the build, as symlinks in the project root).
+`make run-server`, `make run-client`, `make run-gui` and `./scripts/run_demo.sh` do the same from one command.
+Server options: `[PORT]`, `--config FILE`, `--port N`, `--bind ADDR`, `--quiet`.
+Remote access: set `bind_address = 0.0.0.0` in `config/server.conf` and start clients with the server's IP.
+
+**What the server prints** (poster format; the detailed `AUDIT …` lines go to `logs/server.log` only):
+
+```text
+==================================================
+          Network File Sharing Server
+==================================================
+Port     : 5000
+Storage  : ./server_storage
+Database : database/file_sharing.db
+Status   : RUNNING
+==================================================
+[INFO] Server started. Waiting for clients... (Ctrl+C to stop)
+[CLIENT] 127.0.0.1:52310 connected (student1)
+[UPLOAD] student1 -> /documents/project.zip (5.1 MiB) SUCCESS
+[DOWNLOAD] student1 <- /documents/project.zip (5.1 MiB) SUCCESS
+[SEARCH] student1 keyword: project (1 file found)
+[DELETE] student1 -> /documents/old.txt SUCCESS
+[DENIED] student1 MKDIR /users/other
+```
+
+### Storage layout
+
+On first start the server creates these real directories under `server_storage/`:
+
+| Directory | Purpose / rule |
+|---|---|
+| `public/` | Everything uploaded here is automatically **shared** (readable by all users) |
+| `documents/` | General area; files are private to their owner unless shared |
+| `users/<name>/` | Each user's **private home** (created at registration/first login, recorded in `users.home_directory`). Only that user or an admin may create/upload inside; `users/` itself is admin-only |
+| `temporary/` | Scratch area, writable by everyone |
+
+The four top-level directories are system-owned: ordinary users cannot rename or remove them. The root `/` itself is writable by every user.
 
 ## 11. CLI usage
 
+Commands are **case-insensitive** (`LIST`, `list` and `ls` are the same). Start with `./file_client 127.0.0.1 5000`; on a terminal you are prompted for `Username:` / `Password:` (shown as `****`); leave the username blank to skip and use `REGISTER` / `LOGIN` instead.
+
 ```text
-register <user>            create a STUDENT account (prompts for password)
-login <user> | logout | whoami
-ls [path]  cd <path>  pwd  search <text>  info <path>
-upload <local file> [remote dir] [--shared] [--overwrite]
-download <remote file> [local path] [--overwrite]
-rename <path> <new name>   rm <file>   mkdir <path>   rmdir <path>
-share <file>   unshare <file>
-history [n]
-sysinfo                                       (FACULTY / ADMIN)
-users | setrole <user> <STUDENT|FACULTY|ADMIN> | deluser <user> | audit [n]   (ADMIN)
+REGISTER <user>            create a STUDENT account (prompts for password)
+LOGIN <user> | LOGOUT | WHOAMI
+LIST [path] [-l]  CD <path>  PWD  SEARCH <text>  INFO <path>
+UPLOAD <local file> [remote dir] [--shared] [--overwrite]
+DOWNLOAD <remote file> [local path] [--overwrite]
+RENAME <path> <new name>   DELETE <file>   MKDIR <path>   RMDIR <path>
+SHARE <file>   UNSHARE <file>
+HISTORY [n]
+SYSINFO                                       (FACULTY / ADMIN)
+USERS | SETROLE <user> <STUDENT|FACULTY|ADMIN> | DELUSER <user> | AUDIT [n]   (ADMIN)
 ```
 
 Example session:
 
 ```text
-$ ./network-file-client
-linsft:/> login student1
+$ ./file_client 127.0.0.1 5000
+Connected to server 127.0.0.1:5000
+Username (blank = skip, use REGISTER/LOGIN later): student1
 Password: ********
-Logged in as student1 (STUDENT)
-student1@linsft:/> mkdir docs
-student1@linsft:/> upload ~/report.pdf /docs --shared
-upload complete, SHA-256 verified by server
-student1@linsft:/> info /docs/report.pdf
+Login successful! Role: STUDENT
+
+Type 'help' to see available commands.
+File> LIST
+Server files:
+ 1. documents/                     <DIR>
+ 2. public/                        <DIR>
+ 3. temporary/                     <DIR>
+ 4. users/                         <DIR>
+File> UPLOAD ~/project.zip /documents
+Uploading... 100% (5.1 MiB)
+Checksum: VERIFIED (SHA-256, confirmed by server)
+Upload completed successfully.
+File> INFO /documents/project.zip
+Path:        /documents/project.zip
+Size:        5400000 bytes (5.1 MiB)
+SHA-256:     997aee8e...
+Permissions: -rw-r----- (0640)
+Owner:       student1
 ```
 
 ## 12. GUI usage
@@ -333,7 +388,7 @@ No password is hard-coded anywhere. Choose one of:
 | Normal-user demo | Click **Register** in the GUI (or `register alice` in the CLI) — self-registration always creates a `STUDENT`. |
 
 Run these commands while the server is **stopped** (recommended; a running server keeps its in-memory sessions, so changed credentials only apply to new logins).
-Full reset: stop the server, then `rm -rf data/* storage/* logs/*` (keeps the `.gitkeep` files) and seed again.
+Full reset: stop the server, then `make distclean` (or `rm -rf database/*.db* server_storage/* logs/*`) and seed again.
 
 ## 14. Testing
 
@@ -343,10 +398,10 @@ cd build && ctest --output-on-failure        # runs all four suites (GUI suite u
 
 | Suite | What it proves |
 |---|---|
-| `test_unit` (13 cases, 190 checks) | SHA-256 / HMAC / PBKDF2 against NIST & RFC vectors, protocol framing, malformed-frame handling over real sockets, path validation, full RBAC matrix, SQLite prepared statements, SQL-injection strings, transactions |
-| `test_integration` (23 cases, 538 checks) | A real server on a real TCP port: register/login/logout, token replay/forgery, lockout, upload/download + SHA-256 (empty, odd-size, chunk-aligned files), checksum mismatch, tampered storage, path traversal, symlink planting, ownership & visibility, rename/delete/mkdir/rmdir/search/info, history scoping, admin user management, audit trail, hostile network input, mid-transfer disconnect, 12 concurrent clients, client limit, graceful shutdown, persistence, crash recovery, Unicode names |
-| `test_gui` (6 cases, 105 checks) | Real Qt widgets (offscreen): login dialog, every dashboard action against a live server, role-based tab/button visibility, session loss |
-| `test_e2e_cli` (39 checks) | The real `network-file-server` and `network-file-client` binaries: admin init, demo seeding, full user flow, faculty/admin features, 6 parallel CLI clients, **SIGINT** shutdown (exit code 0, port closed, no staging files) |
+| `test_unit` (16 cases, 247 checks) | SHA-256 / HMAC / PBKDF2 against NIST & RFC vectors, protocol framing, malformed-frame handling over real sockets, path validation, full RBAC matrix, SQLite prepared statements, SQL-injection strings, transactions |
+| `test_integration` (27 cases, 624 checks) | A real server on a real TCP port: register/login/logout, token replay/forgery, lockout, upload/download + SHA-256 (empty, odd-size, chunk-aligned files), checksum mismatch, tampered storage, path traversal, symlink planting, ownership & visibility, rename/delete/mkdir/rmdir/search/info, history scoping, admin user management, audit trail, hostile network input, mid-transfer disconnect, 12 concurrent clients, client limit, graceful shutdown, persistence, crash recovery, Unicode names |
+| `test_gui` (6 cases, 110 checks) | Real Qt widgets (offscreen): login dialog, every dashboard action against a live server, role-based tab/button visibility, session loss |
+| `test_e2e_cli` (57 checks) | The real `network-file-server` and `network-file-client` binaries: admin init, demo seeding, full user flow, faculty/admin features, 6 parallel CLI clients, **SIGINT** shutdown (exit code 0, port closed, no staging files) |
 
 See [`docs/TESTING.md`](docs/TESTING.md) for the manual test plan and results.
 
@@ -356,15 +411,15 @@ See [`docs/TESTING.md`](docs/TESTING.md) for the manual test plan and results.
 |---|---|
 | `cmake` says Qt6 not found | `sudo apt install qt6-base-dev`, or build without GUI: `./scripts/build.sh --no-gui` |
 | GUI: "could not connect to the display / xcb" | WSL2 needs WSLg (Windows 11 / current Windows 10). Update with `wsl --update` in PowerShell, then `wsl --shutdown`. Use `./network-file-client` meanwhile. |
-| `bind 127.0.0.1:9090: Address already in use` | Another server instance is running: `pkill network-file-server`, or `--port 9091` on both server and client |
+| `bind 127.0.0.1:5000: Address already in use` | Another server instance is running: `pkill -x network-file-server`, or use another port: `./file_server 5001` and `./file_client 127.0.0.1 5001` |
 | Client says *Is network-file-server running?* | Start the server in another terminal; check host/port |
 | Login says *too many failed attempts* | Wait 60 s (per-username lockout) |
-| `database error` in client | See `logs/server.log`; make sure `data/` is writable |
-| Want to start from scratch | Stop the server, `rm -rf data/* storage/* logs/*`, run `--seed-demo` again |
+| `database error` in client | See `logs/server.log`; make sure `database/` is writable |
+| Want to start from scratch | Stop the server, run `make distclean`, then `./file_server --seed-demo` again |
 
 ## 16. Project limitations
 
-* **No TLS.** Traffic (including passwords) is unencrypted; use only on localhost/trusted networks or tunnel through SSH (`ssh -L 9090:127.0.0.1:9090 host`). TLS is the first item under future work.
+* **No TLS.** Traffic (including passwords) is unencrypted; use only on localhost/trusted networks or tunnel through SSH (`ssh -L 5000:127.0.0.1:5000 host`). TLS is the first item under future work.
 * Thread-per-client model (capped by `max_clients`, default 64) — fine for a lab/classroom, not for thousands of connections.
 * Sessions are in memory: restarting the server logs everyone out.
 * Transfers are not resumable; one request in flight per connection (up to 8 open transfers).
@@ -379,4 +434,4 @@ file versioning and trash · two-factor login · persistent sessions · a char-d
 
 ---
 
-*License: MIT. Layout:* `client/ common/ server/ database/ config/ storage/ logs/ tests/ docs/ scripts/`
+*License: MIT. Layout:* `client/ common/ server/ database/ config/ server_storage/ logs/ tests/ docs/ scripts/ Makefile CMakeLists.txt`
