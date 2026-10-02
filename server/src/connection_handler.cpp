@@ -15,7 +15,7 @@ ConnectionHandler::ConnectionHandler(Services& svc, int fd, std::string addr)
     : svc_(svc), fd_(fd), addr_(std::move(addr)), ctx_(svc.transfers, addr_) {}
 
 void ConnectionHandler::run() {
-    LOG_INFO("client connected: %s", addr_.c_str());
+    Logger::instance().fileOnly("tcp connection opened: %s", addr_.c_str());
     svc_.stats.connectionsActive++;
     svc_.stats.connectionsTotal++;
     Message req;
@@ -43,7 +43,8 @@ void ConnectionHandler::run() {
     }
     svc_.transfers.abortAll(ctx_, "connection closed");
     svc_.stats.connectionsActive--;
-    LOG_INFO("client disconnected: %s", addr_.c_str());
+    if (!user_.empty()) Logger::instance().event("CLIENT", "%s disconnected (%s)", addr_.c_str(), user_.c_str());
+    else Logger::instance().fileOnly("tcp connection closed: %s", addr_.c_str());
 }
 
 void ConnectionHandler::reply(const Message& req, Status st, const std::string& msg, const Writer* body) {
@@ -60,8 +61,23 @@ bool ConnectionHandler::authenticate(Reader& r, Session& s) {
 }
 
 void ConnectionHandler::audit(const Session& s, const char* action, const std::string& target,
-                              const char* result, const std::string& detail) {
+                              const char* result, const std::string& detail, bool echo) {
     svc_.audit.record(s.userId, s.username, action, target, result, addr_, detail);
+    if (!echo) return;
+    std::string a = action, res = result;
+    if (res == "DENIED") {
+        Logger::instance().event("DENIED", "%s %s %s", s.username.c_str(), action, target.c_str());
+        return;
+    }
+    std::string line = s.username + (a == "DOWNLOAD" ? " <- " : " -> ") + target + " " + res;
+    if (res != "SUCCESS" && !detail.empty()) line += " (" + detail + ")";
+    else if (res == "SUCCESS" && !detail.empty() && (a == "RENAME" || a == "SHARE" || a == "USER_SET_ROLE" || a == "USER_DELETE"))
+        line += " " + detail;
+    Logger::instance().event(action, "%s", line.c_str());
+}
+
+void ConnectionHandler::ensureHome(const std::string& username, int64_t userId) {
+    svc_.files.ensureHomeDir(username, userId);
 }
 
 void ConnectionHandler::deny(const Message& m, const Session& s, const char* action, const std::string& target) {
@@ -144,6 +160,10 @@ void ConnectionHandler::hRegister(const Message& m, Reader& r) {
     Status st = svc_.auth.registerUser(user, pass, msg);
     svc_.audit.record(0, user.substr(0, 64), "REGISTER", user.substr(0, 64), st == Status::OK ? "SUCCESS" : "FAILURE",
                       addr_, st == Status::OK ? "" : msg);
+    if (st == Status::OK) {
+        auto rows = svc_.db.query("SELECT id FROM users WHERE username=?", {user});
+        if (!rows.empty()) ensureHome(user, DB::asInt(rows[0][0]));
+    }
     reply(m, st, msg);
 }
 
@@ -155,10 +175,14 @@ void ConnectionHandler::hLogin(const Message& m, Reader& r) {
     Status st = svc_.auth.login(user, pass, s, msg);
     if (st != Status::OK) {
         svc_.audit.record(0, user.substr(0, 64), "LOGIN", user.substr(0, 64), "FAILURE", addr_, msg);
+        Logger::instance().event("DENIED", "login failed for %s from %s (%s)", user.substr(0, 64).c_str(), addr_.c_str(), msg.c_str());
         reply(m, st, msg);
         return;
     }
-    audit(s, "LOGIN", s.username, "SUCCESS");
+    audit(s, "LOGIN", s.username, "SUCCESS", "", false);
+    user_ = s.username;
+    ensureHome(s.username, s.userId);
+    Logger::instance().event("CLIENT", "%s connected (%s)", addr_.c_str(), s.username.c_str());
     Writer w;
     w.str(s.token).i64(s.userId).str(s.username).str(roleName(s.role));
     reply(m, Status::OK, msg, &w);
@@ -167,7 +191,9 @@ void ConnectionHandler::hLogin(const Message& m, Reader& r) {
 void ConnectionHandler::hLogout(const Message& m, Reader& r) {
     REQUIRE_AUTH(s);
     svc_.auth.logout(s.token);
-    audit(s, "LOGOUT", s.username, "SUCCESS");
+    audit(s, "LOGOUT", s.username, "SUCCESS", "", false);
+    Logger::instance().event("CLIENT", "%s logged out (%s)", addr_.c_str(), s.username.c_str());
+    user_.clear();
     reply(m, Status::OK, "logged out");
 }
 
@@ -198,6 +224,9 @@ void ConnectionHandler::hSearch(const Message& m, Reader& r) {
     std::vector<FileEntry> out;
     for (auto& e : svc_.files.search(q, 500))
         if (e.isDir || PermissionService::canReadFile(s.principal(), e.ownerId, e.shared)) out.push_back(std::move(e));
+    std::string found = std::to_string(out.size()) + (out.size() == 1 ? " file found" : " files found");
+    audit(s, "SEARCH", q.substr(0, 100), "SUCCESS", found, false);
+    Logger::instance().event("SEARCH", "%s keyword: %s (%s)", s.username.c_str(), q.substr(0, 100).c_str(), found.c_str());
     Writer w;
     writeList(w, out);
     reply(m, Status::OK, "ok", &w);
@@ -212,6 +241,7 @@ void ConnectionHandler::hInfo(const Message& m, Reader& r) {
     auto e = svc_.files.find(path);
     if (!e) { reply(m, Status::NOT_FOUND, "no such file or directory"); return; }
     if (!e->isDir && !PermissionService::canReadFile(s.principal(), e->ownerId, e->shared)) { deny(m, s, "INFO", path); return; }
+    e->mode = svc_.files.statMode(path);
     Writer w;
     write(w, *e);
     reply(m, Status::OK, "ok", &w);
@@ -272,6 +302,7 @@ void ConnectionHandler::hMkdir(const Message& m, Reader& r) {
     if (!readPath(m, r, &s, "MKDIR", path)) return;
     r.expectEnd();
     REQUIRE_PERM(s, Perm::MKDIR, "MKDIR", path);
+    if (!PermissionService::canWriteInto(s.principal(), parentOf(path))) { deny(m, s, "MKDIR", path); return; }
     FsResult fr = svc_.files.makeDir(path, s.userId);
     if (fr != FsResult::OK) {
         audit(s, "MKDIR", path, "FAILURE", fsResultMessage(fr));
@@ -329,6 +360,8 @@ void ConnectionHandler::hUploadBegin(const Message& m, Reader& r) {
     bool shared = r.boolean(), overwrite = r.boolean();
     r.expectEnd();
     REQUIRE_PERM(s, Perm::UPLOAD, "UPLOAD", dir);
+    if (!PermissionService::canWriteInto(s.principal(), dir)) { deny(m, s, "UPLOAD", dir); return; }
+    if (PermissionService::isPublicPath(dir)) shared = true;  // files in /public are readable by everyone
     if (!isValidName(name, &nerr)) {
         audit(s, "UPLOAD", dir + "/" + name.substr(0, 100), "FAILURE", "bad filename: " + nerr);
         reply(m, Status::INVALID_PATH, "invalid file name: " + nerr);
@@ -367,11 +400,17 @@ void ConnectionHandler::hUploadEnd(const Message& m, Reader& r) {
     uint32_t tid = r.u32();
     r.expectEnd();
     std::string target = "tid " + std::to_string(tid);
+    uint64_t size = 0;
     auto it = ctx_.uploads.find(tid);
-    if (it != ctx_.uploads.end()) target = it->second.vpath;
+    if (it != ctx_.uploads.end()) { target = it->second.vpath; size = it->second.received; }
     std::string msg, sha;
     Status st = svc_.transfers.finishUpload(ctx_, s.principal(), tid, msg, sha);
-    audit(s, "UPLOAD", target, st == Status::OK ? "SUCCESS" : "FAILURE", st == Status::OK ? "sha256=" + sha : msg);
+    if (st == Status::OK) {
+        audit(s, "UPLOAD", target, "SUCCESS", "sha256=" + sha, false);
+        Logger::instance().event("UPLOAD", "%s -> %s (%s) SUCCESS", s.username.c_str(), target.c_str(), humanSize(size).c_str());
+    } else {
+        audit(s, "UPLOAD", target, "FAILURE", msg);
+    }
     Writer w;
     w.str(sha);
     reply(m, st, msg, &w);
@@ -425,11 +464,19 @@ void ConnectionHandler::hDownloadEnd(const Message& m, Reader& r) {
     bool ok = r.boolean();
     r.expectEnd();
     std::string target = "tid " + std::to_string(tid);
+    uint64_t size = 0;
     auto it = ctx_.downloads.find(tid);
-    if (it != ctx_.downloads.end()) target = it->second.vpath;
+    if (it != ctx_.downloads.end()) { target = it->second.vpath; size = it->second.sent; }
     std::string msg;
     Status st = svc_.transfers.finishDownload(ctx_, tid, ok, msg);
-    if (st == Status::OK) audit(s, "DOWNLOAD", target, ok ? "SUCCESS" : "FAILURE", ok ? "" : "client checksum mismatch");
+    if (st == Status::OK) {
+        if (ok) {
+            audit(s, "DOWNLOAD", target, "SUCCESS", "", false);
+            Logger::instance().event("DOWNLOAD", "%s <- %s (%s) SUCCESS", s.username.c_str(), target.c_str(), humanSize(size).c_str());
+        } else {
+            audit(s, "DOWNLOAD", target, "FAILURE", "client checksum mismatch");
+        }
+    }
     reply(m, st, msg);
 }
 

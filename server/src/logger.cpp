@@ -29,6 +29,51 @@ void Logger::close() {
     if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
 }
 
+static void writeAll(int fd, const char* p, size_t n) {
+    size_t off = 0;
+    while (off < n) {
+        ssize_t w = ::write(fd, p + off, n - off);
+        if (w < 0) { if (errno == EINTR) continue; break; }
+        off += size_t(w);
+    }
+}
+
+static const char* tagColor(const std::string& t) {
+    if (t == "INFO") return "36";
+    if (t == "WARN") return "33";
+    if (t == "ERROR" || t == "DENIED") return "31";
+    if (t == "CLIENT") return "32";
+    if (t == "UPLOAD" || t == "DOWNLOAD") return "34";
+    return "35";
+}
+
+void Logger::writeLine(const char* tag, LogLevel level, const char* rawMsg, bool console) {
+    char msg[2048];
+    std::snprintf(msg, sizeof msg, "%s", rawMsg);
+    // strip control characters so untrusted input cannot forge log lines
+    for (char* p = msg; *p; ++p)
+        if ((unsigned char)*p < 0x20 && *p != '\t') *p = '?';
+
+    time_t now = time(nullptr);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    char ts[32];
+    std::strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", &tmv);
+    char line[2200];
+    int n = std::snprintf(line, sizeof line, "%s [%-5s] %s\n", ts, tag, msg);
+    if (n < 0) return;
+    if (size_t(n) >= sizeof line) n = int(sizeof line) - 1;
+
+    std::lock_guard<std::mutex> lk(mu_);
+    if (fd_ >= 0) writeAll(fd_, line, size_t(n));
+    if (console && console_) {
+        FILE* out = (level >= LogLevel::WARN) ? stderr : stdout;
+        if (isatty(fileno(out))) std::fprintf(out, "\033[%sm[%s]\033[0m %s\n", tagColor(tag), tag, msg);
+        else std::fprintf(out, "[%s] %s\n", tag, msg);
+        std::fflush(out);
+    }
+}
+
 void Logger::log(LogLevel level, const char* fmt, ...) {
     if (level < level_) return;
     char msg[2048];
@@ -36,35 +81,32 @@ void Logger::log(LogLevel level, const char* fmt, ...) {
     va_start(ap, fmt);
     std::vsnprintf(msg, sizeof msg, fmt, ap);
     va_end(ap);
-    // strip control characters so untrusted input cannot forge log lines
-    for (char* p = msg; *p; ++p)
-        if ((unsigned char)*p < 0x20 && *p != '\t') *p = '?';
+    static const char* names[] = {"DEBUG", "INFO", "WARN", "ERROR"};
+    writeLine(names[int(level)], level, msg, true);
+}
 
-    static const char* names[] = {"DEBUG", "INFO ", "WARN ", "ERROR"};
-    time_t now = time(nullptr);
-    struct tm tmv;
-    localtime_r(&now, &tmv);
-    char ts[32];
-    std::strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", &tmv);
-    char line[2200];
-    int n = std::snprintf(line, sizeof line, "%s [%s] %s\n", ts, names[int(level)], msg);
-    if (n < 0) return;
-    if (size_t(n) >= sizeof line) n = int(sizeof line) - 1;
+void Logger::event(const char* tag, const char* fmt, ...) {
+    char msg[2048];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    writeLine(tag, LogLevel::INFO, msg, true);
+}
 
+void Logger::fileOnly(const char* fmt, ...) {
+    char msg[2048];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(msg, sizeof msg, fmt, ap);
+    va_end(ap);
+    writeLine("INFO", LogLevel::INFO, msg, false);
+}
+
+void Logger::banner(const std::string& text) {
     std::lock_guard<std::mutex> lk(mu_);
-    if (fd_ >= 0) {
-        size_t off = 0;
-        while (off < size_t(n)) {
-            ssize_t w = ::write(fd_, line + off, size_t(n) - off);
-            if (w < 0) { if (errno == EINTR) continue; break; }
-            off += size_t(w);
-        }
-    }
-    if (console_) {
-        FILE* out = (level >= LogLevel::WARN) ? stderr : stdout;
-        std::fwrite(line, 1, size_t(n), out);
-        std::fflush(out);
-    }
+    if (fd_ >= 0) writeAll(fd_, text.data(), text.size());
+    if (console_) { std::fwrite(text.data(), 1, text.size(), stdout); std::fflush(stdout); }
 }
 
 void AuditLogger::record(int64_t userId, const std::string& username, const std::string& action,
@@ -77,8 +119,8 @@ void AuditLogger::record(int64_t userId, const std::string& username, const std:
     } catch (const std::exception& e) {
         LOG_ERROR("audit write failed: %s", e.what());
     }
-    LOG_INFO("AUDIT user=%s action=%s target=%s result=%s from=%s %s", username.c_str(), action.c_str(),
-             target.c_str(), result.c_str(), clientAddr.c_str(), detail.c_str());
+    Logger::instance().fileOnly("AUDIT user=%s action=%s target=%s result=%s from=%s %s", username.c_str(),
+                                action.c_str(), target.c_str(), result.c_str(), clientAddr.c_str(), detail.c_str());
 }
 
 std::vector<AuditEntry> AuditLogger::recent(size_t limit) {

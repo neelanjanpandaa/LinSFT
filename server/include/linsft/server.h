@@ -20,9 +20,9 @@ namespace linsft {
 
 struct ServerConfig {
     std::string bindAddress = "127.0.0.1";
-    uint16_t port = 9090;
-    std::string storageDir = "storage";
-    std::string dbPath = "data/linsft.db";
+    uint16_t port = 5000;
+    std::string storageDir = "server_storage";
+    std::string dbPath = "database/file_sharing.db";
     std::string logPath = "logs/server.log";
     size_t maxClients = 64;
     uint64_t maxFileSize = 512ULL * 1024 * 1024;

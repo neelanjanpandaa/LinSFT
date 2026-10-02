@@ -36,8 +36,8 @@ Status AuthenticationManager::registerUser(const std::string& username, const st
     if (salt.empty()) { msg = "entropy source unavailable"; return Status::INTERNAL; }
     std::string hash = hashPassword(password, salt, iterations_);
     try {
-        db_.exec("INSERT INTO users(username,salt,pw_hash,iterations,role,created_at) VALUES(?,?,?,?,?,?)",
-                 {username, salt, hash, int64_t(iterations_), std::string("STUDENT"), int64_t(time(nullptr))});
+        db_.exec("INSERT INTO users(username,salt,pw_hash,iterations,role,home_directory,created_at) VALUES(?,?,?,?,?,?,?)",
+                 {username, salt, hash, int64_t(iterations_), std::string("STUDENT"), "/users/" + username, int64_t(time(nullptr))});
     } catch (const DbError& e) {
         if (e.isConstraint()) { msg = "username already taken"; return Status::EXISTS; }
         LOG_ERROR("register: %s", e.what());
@@ -58,8 +58,8 @@ Status AuthenticationManager::createOrUpdateUser(const std::string& username, co
     try {
         auto rows = db_.query("SELECT id FROM users WHERE username=?", {username});
         if (rows.empty()) {
-            db_.exec("INSERT INTO users(username,salt,pw_hash,iterations,role,created_at) VALUES(?,?,?,?,?,?)",
-                     {username, salt, hash, int64_t(iterations_), std::string(roleName(role)),
+            db_.exec("INSERT INTO users(username,salt,pw_hash,iterations,role,home_directory,created_at) VALUES(?,?,?,?,?,?,?)",
+                     {username, salt, hash, int64_t(iterations_), std::string(roleName(role)), "/users/" + username,
                       int64_t(time(nullptr))});
             msg = "created";
         } else {

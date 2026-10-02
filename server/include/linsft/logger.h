@@ -20,8 +20,15 @@ public:
     void setConsole(bool on) { console_ = on; }
     void setLevel(LogLevel l) { level_ = l; }
     void log(LogLevel level, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
+    // Activity line with a custom tag, shown on the console as "[TAG] message" (e.g. [UPLOAD], [CLIENT]).
+    void event(const char* tag, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
+    // Detailed line written to the log file only (not echoed to the console).
+    void fileOnly(const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+    // Verbatim text block (start-up banner): console and log file, no timestamp.
+    void banner(const std::string& text);
 private:
     Logger() = default;
+    void writeLine(const char* tag, LogLevel level, const char* msg, bool console);
     std::mutex mu_;
     int fd_ = -1;
     bool console_ = true;

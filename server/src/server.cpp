@@ -72,6 +72,7 @@ bool Services::init(std::string& err) {
     if (!Logger::instance().open(cfg.logPath, err)) return false;
     if (!db.open(cfg.dbPath, err)) return false;
     if (!files.init(err)) return false;
+    files.ensureDefaultLayout();
     transfers.recoverStale();
     return true;
 }
@@ -121,7 +122,7 @@ void ConnectionManager::reap(bool all) {
 }
 
 void ConnectionManager::run() {
-    LOG_INFO("listening on port %u", unsigned(port_));
+    Logger::instance().fileOnly("listening on port %u", unsigned(port_));
     while (running_) {
         pollfd pfd{listenFd_, POLLIN, 0};
         int pr = ::poll(&pfd, 1, 200);  // short timeout so stop() is noticed promptly

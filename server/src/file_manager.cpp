@@ -69,7 +69,8 @@ static const char* kFileSel =
     "SELECT f.id,f.path,f.name,f.size,f.owner_id,COALESCE(u.username,'?'),f.sha256,f.shared,"
     "f.created_at,f.modified_at FROM files f LEFT JOIN users u ON u.id=f.owner_id ";
 static const char* kDirSel =
-    "SELECT d.id,d.path,d.name,d.owner_id,COALESCE(u.username,'?'),d.created_at "
+    "SELECT d.id,d.path,d.name,d.owner_id,"
+    "COALESCE(u.username,CASE WHEN d.owner_id=0 THEN 'system' ELSE '?' END),d.created_at "
     "FROM directories d LEFT JOIN users u ON u.id=d.owner_id ";
 
 std::optional<FileEntry> FileManager::findLocked(const std::string& vpath) {
@@ -267,6 +268,29 @@ void FileManager::reassignOwner(int64_t from, int64_t to) {
     std::lock_guard<std::mutex> lk(mu_);
     db_.exec("UPDATE files SET owner_id=? WHERE owner_id=?", {to, from});
     db_.exec("UPDATE directories SET owner_id=? WHERE owner_id=?", {to, from});
+}
+
+}  // namespace linsft
+
+namespace linsft {
+
+void FileManager::ensureDefaultLayout() {
+    for (const char* d : {"/public", "/documents", "/users", "/temporary"}) {
+        FsResult r = makeDir(d, 0);
+        if (r != FsResult::OK && r != FsResult::EXISTS) LOG_ERROR("cannot create default directory %s: %s", d, fsResultMessage(r));
+    }
+}
+
+void FileManager::ensureHomeDir(const std::string& username, int64_t userId) {
+    FsResult r = makeDir("/users/" + username, userId);
+    if (r != FsResult::OK && r != FsResult::EXISTS)
+        LOG_WARN("cannot create home directory for %s: %s", username.c_str(), fsResultMessage(r));
+}
+
+uint32_t FileManager::statMode(const std::string& vpath) {
+    struct stat st;
+    if (::lstat(realPath(vpath).c_str(), &st) != 0) return 0;
+    return uint32_t(st.st_mode);
 }
 
 }  // namespace linsft

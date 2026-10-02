@@ -38,6 +38,13 @@ public:
                           uint64_t size, const std::string& sha256, bool shared, bool overwrite);
     void reassignOwner(int64_t fromUser, int64_t toUser);
 
+    // Default storage layout: /public /documents /users /temporary (system-owned, real directories).
+    void ensureDefaultLayout();
+    // Creates /users/<username> owned by that user if it does not exist yet.
+    void ensureHomeDir(const std::string& username, int64_t userId);
+    // st_mode of the real file/directory on disk (0 if it cannot be stat()ed).
+    uint32_t statMode(const std::string& vpath);
+
 private:
     std::optional<FileEntry> findLocked(const std::string& vpath);
     DatabaseManager& db_;

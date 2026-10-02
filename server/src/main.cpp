@@ -23,7 +23,8 @@ static void onSignal(int) { g_stop = 1; }
 static void usage() {
     std::puts(
         "LinSFT server\n\n"
-        "Usage: network-file-server [options]\n"
+        "Usage: network-file-server [PORT] [options]      (also installed as ./file_server)\n"
+        "  PORT                 listening port (default 5000), e.g.  ./file_server 5000\n"
         "  --config FILE        configuration file (default: config/server.conf if present)\n"
         "  --port N             override listening port\n"
         "  --bind ADDR          override bind address (default 127.0.0.1)\n"
@@ -86,10 +87,9 @@ static int seedDemo(Services& svc) {
             return 1;
         }
     }
-    // demo content: /Public directory + shared welcome file owned by admin
+    // demo content: a shared welcome file in /public owned by admin (default layout already exists)
     int64_t adminId = DatabaseManager::asInt(svc.db.query("SELECT id FROM users WHERE username='admin'")[0][0]);
-    svc.files.makeDir("/Public", adminId);
-    if (!svc.files.find("/Public/WELCOME.txt")) {
+    if (!svc.files.find("/public/WELCOME.txt")) {
         const std::string text =
             "Welcome to LinSFT!\n\nThis shared demo file was created by 'network-file-server --seed-demo'.\n"
             "Try: download it, view its info (SHA-256), upload your own files, search, rename, delete.\n";
@@ -98,7 +98,7 @@ static int seedDemo(Services& svc) {
         if (fd >= 0) {
             bool ok = ::write(fd, text.data(), text.size()) == ssize_t(text.size());
             ::close(fd);
-            if (ok) svc.files.commitUpload(tmp, "/Public/WELCOME.txt", adminId, text.size(),
+            if (ok) svc.files.commitUpload(tmp, "/public/WELCOME.txt", adminId, text.size(),
                                           Sha256::hashHex(text), true, true);
             else ::unlink(tmp.c_str());
         }
@@ -134,6 +134,7 @@ int main(int argc, char** argv) {
         else if (a == "--quiet") quiet = true;
         else if (a == "--init-admin") initAdminUser = next("--init-admin");
         else if (a == "--seed-demo") seed = true;
+        else if (!a.empty() && a.find_first_not_of("0123456789") == std::string::npos) portOverride = std::atoi(a.c_str());  // positional PORT
         else { std::cerr << "unknown option: " << a << "\n"; usage(); return 2; }
     }
     if (configPath.empty()) {
@@ -165,8 +166,16 @@ int main(int argc, char** argv) {
 
     LinSFTServer server(cfg);
     if (!server.start(err)) { std::cerr << "server start failed: " << err << "\n"; return 1; }
-    LOG_INFO("LinSFT server ready (bind %s:%u, storage '%s', db '%s'). Press Ctrl+C to stop.",
-             cfg.bindAddress.c_str(), unsigned(server.port()), cfg.storageDir.c_str(), cfg.dbPath.c_str());
+    {
+        char b[640];
+        const char* bar = "==================================================";
+        std::snprintf(b, sizeof b,
+                      "%s\n          Network File Sharing Server\n%s\n"
+                      "Port     : %u\nStorage  : ./%s\nDatabase : %s\nStatus   : RUNNING\n%s\n",
+                      bar, bar, unsigned(server.port()), cfg.storageDir.c_str(), cfg.dbPath.c_str(), bar);
+        Logger::instance().banner(b);
+    }
+    LOG_INFO("Server started. Waiting for clients... (Ctrl+C to stop)");
     struct timespec ts{0, 100 * 1000 * 1000};
     while (!g_stop) nanosleep(&ts, nullptr);
     LOG_INFO("signal received - shutting down gracefully");

@@ -3,15 +3,16 @@ build/
 /network-file-server
 /network-file-client
 /network-file-gui
+/file_server
+/file_client
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
 
 # runtime data (never commit)
-data/*
-!data/.gitkeep
-storage/*
-!storage/.gitkeep
+database/*.db
+server_storage/*
+!server_storage/.gitkeep
 logs/*
 !logs/.gitkeep
 *.db

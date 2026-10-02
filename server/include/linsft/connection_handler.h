@@ -20,7 +20,8 @@ private:
     bool readPath(const Message& m, Reader& r, const Session* s, const char* action, std::string& out);
     void deny(const Message& m, const Session& s, const char* action, const std::string& target);
     void audit(const Session& s, const char* action, const std::string& target, const char* result,
-               const std::string& detail = "");
+               const std::string& detail = "", bool echo = true);
+    void ensureHome(const std::string& username, int64_t userId);
 
     void hRegister(const Message&, Reader&);
     void hLogin(const Message&, Reader&);
@@ -52,6 +53,7 @@ private:
     std::string addr_;
     TransferContext ctx_;
     bool sendOk_ = true;
+    std::string user_;  // username after a successful login on this connection (for log lines)
 };
 
 }  // namespace linsft

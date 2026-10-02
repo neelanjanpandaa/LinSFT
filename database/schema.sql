@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     pw_hash     TEXT    NOT NULL,                 -- PBKDF2-HMAC-SHA256, hex
     iterations  INTEGER NOT NULL,
     role        TEXT    NOT NULL CHECK (role IN ('ADMIN','FACULTY','STUDENT')),
+    home_directory TEXT NOT NULL DEFAULT '',          -- virtual path of the private home, e.g. /users/alice
     created_at  INTEGER NOT NULL,
     last_login  INTEGER NOT NULL DEFAULT 0
 );
@@ -17,7 +18,7 @@ CREATE TABLE IF NOT EXISTS directories (
     path        TEXT    NOT NULL UNIQUE,          -- normalised virtual path, e.g. /docs
     name        TEXT    NOT NULL,
     parent      TEXT    NOT NULL,
-    owner_id    INTEGER NOT NULL REFERENCES users(id),
+    owner_id    INTEGER NOT NULL DEFAULT 0,          -- 0 = system (default layout: public, documents, users, temporary)
     created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dirs_parent ON directories(parent);
