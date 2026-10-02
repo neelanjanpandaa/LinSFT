@@ -764,4 +764,115 @@ TEST(unicode_and_spaces_in_names) {
     CHECK(c->info("/Ünï Dir/résumé final.txt", fi).ok);
 }
 
+TEST(default_layout_home_dirs_and_write_rules) {
+    Env e;
+    auto a = e.client("alice"), b = e.client("bob");
+    auto adm = e.client("root1", true, Role::ADMIN);
+    std::vector<FileEntry> v;
+    CHECK(a->list("/", v).ok);
+    for (const char* name : {"public", "documents", "users", "temporary"}) {
+        bool found = false;
+        for (auto& f : v) if (f.name == name) { found = f.isDir && f.owner == "system"; }
+        CHECK(found);                                                                     // default layout exists, system-owned
+        struct stat st{};
+        CHECK(stat((e.store() + "/" + name).c_str(), &st) == 0 && S_ISDIR(st.st_mode));  // ...as real Linux directories
+        CHECK_EQ(int(st.st_mode & 0777), 0750);
+    }
+    // home directories: created at first login, recorded in users.home_directory
+    CHECK(a->list("/users", v).ok);
+    int homes = 0;
+    for (auto& f : v) if ((f.name == "alice" && f.owner == "alice") || (f.name == "bob" && f.owner == "bob")) ++homes;
+    CHECK_EQ(homes, 2);
+    auto rows = e.srv->services().db.query("SELECT home_directory FROM users WHERE username='alice'");
+    CHECK_EQ(DatabaseManager::asStr(rows[0][0]), std::string("/users/alice"));
+    // registration alone also provisions the home directory
+    auto reg = e.client();
+    CHECK(reg->registerUser("carol", "carol-password").ok);
+    FileEntry fi;
+    CHECK(a->info("/users/carol", fi).ok); CHECK(fi.isDir); CHECK_EQ(fi.owner, std::string("carol"));
+    // private homes: only the owner (or an admin) may create/upload inside
+    CHECK_EQ(b->makeDir("/users/alice/x").status, Status::FORBIDDEN);
+    CHECK_EQ(b->makeDir("/users/zed").status, Status::FORBIDDEN);
+    CHECK_EQ(b->makeDir("/users/bob-extra").status, Status::FORBIDDEN);                  // /users itself is admin-only
+    writeFile(e.tmp("h.txt"), "home data");
+    CHECK_EQ(b->upload(e.tmp("h.txt"), "/users/alice", "h.txt").status, Status::FORBIDDEN);
+    CHECK(a->upload(e.tmp("h.txt"), "/users/alice", "h.txt").ok);
+    CHECK(a->makeDir("/users/alice/sub").ok);
+    CHECK_EQ(b->download("/users/alice/h.txt", e.tmp("steal")).status, Status::FORBIDDEN);  // files are private by default
+    CHECK(adm->makeDir("/users/ghost").ok);                                              // admin may provision homes
+    // system directories are protected from ordinary users
+    CHECK_EQ(a->removeDir("/public").status, Status::FORBIDDEN);
+    CHECK_EQ(a->rename("/documents", "docs2").status, Status::FORBIDDEN);
+    // but shared areas are writable by everyone
+    CHECK(a->upload(e.tmp("h.txt"), "/documents", "h.txt").ok);
+    CHECK(b->upload(e.tmp("h.txt"), "/temporary", "h2.txt").ok);
+    std::vector<AuditEntry> au;
+    CHECK(adm->audit(300, au).ok);
+    int denied = 0;
+    for (auto& x : au) if (x.result == "DENIED" && x.username == "bob") ++denied;
+    CHECK(denied >= 4);
+}
+
+TEST(public_directory_auto_shares_files) {
+    Env e;
+    auto a = e.client("alice"), b = e.client("bob");
+    CHECK(upload(*a, e, "notice.txt", "for everyone", "/public", false));                 // shared flag NOT set by the uploader
+    FileEntry fi;
+    CHECK(b->info("/public/notice.txt", fi).ok);
+    CHECK(fi.shared);
+    CHECK(b->download("/public/notice.txt", e.tmp("n.out")).ok);
+    CHECK(upload(*a, e, "plain.txt", "private", "/documents", false));                    // other areas stay private by default
+    CHECK_EQ(b->download("/documents/plain.txt", e.tmp("p.out")).status, Status::FORBIDDEN);
+    CHECK(a->makeDir("/public/sub").ok);
+    CHECK(upload(*a, e, "deep.txt", "x", "/public/sub", false));
+    CHECK(b->info("/public/sub/deep.txt", fi).ok); CHECK(fi.shared);
+}
+
+TEST(file_info_reports_linux_permissions) {
+    Env e;
+    auto a = e.client("alice");
+    CHECK(upload(*a, e, "f.txt", "abc"));
+    FileEntry fi;
+    CHECK(a->info("/f.txt", fi).ok);
+    CHECK(S_ISREG(fi.mode)); CHECK_EQ(int(fi.mode & 07777), 0640);
+    CHECK_EQ(modeString(fi.mode), std::string("-rw-r-----"));
+    CHECK(a->info("/public", fi).ok);
+    CHECK(S_ISDIR(fi.mode)); CHECK_EQ(modeString(fi.mode), std::string("drwxr-x---"));
+    CHECK(a->info("/", fi).ok); CHECK(S_ISDIR(fi.mode));
+    struct stat st{};                                                                    // what the client sees is what Linux reports
+    CHECK(stat((e.store() + "/f.txt").c_str(), &st) == 0);
+    CHECK(a->info("/f.txt", fi).ok); CHECK_EQ(int(fi.mode & 07777), int(st.st_mode & 07777));
+}
+
+TEST(activity_log_lines_and_search_audit) {
+    Env e;
+    auto a = e.client("alice"), b = e.client("bob");
+    CHECK(upload(*a, e, "f.txt", "abc"));
+    CHECK(a->download("/f.txt", e.tmp("f.out")).ok);
+    std::vector<FileEntry> v;
+    CHECK(a->search("f.txt", v).ok); CHECK_EQ(v.size(), size_t(1));
+    CHECK(a->search("nomatchatall", v).ok); CHECK(v.empty());
+    CHECK_EQ(b->makeDir("/users/alice/x").status, Status::FORBIDDEN);
+    CHECK(a->removeFile("/f.txt").ok);
+    CHECK(a->logout().ok);
+    std::string log = readFile(e.dir + "/server.log");
+    auto has = [&](const char* s) { return log.find(s) != std::string::npos; };
+    CHECK(has("[CLIENT] 127.0.0.1:"));
+    CHECK(has(" connected (alice)"));
+    CHECK(has("[UPLOAD] alice -> /f.txt (3 B) SUCCESS"));
+    CHECK(has("[DOWNLOAD] alice <- /f.txt (3 B) SUCCESS"));
+    CHECK(has("[SEARCH] alice keyword: f.txt (1 file found)"));
+    CHECK(has("[SEARCH] alice keyword: nomatchatall (0 files found)"));
+    CHECK(has("[DELETE] alice -> /f.txt SUCCESS"));
+    CHECK(has("[DENIED] bob MKDIR /users/alice/x"));
+    CHECK(has("logged out (alice)"));
+    auto adm = e.client("root1", true, Role::ADMIN);
+    std::vector<AuditEntry> au;
+    CHECK(adm->audit(300, au).ok);
+    bool searchAudited = false;
+    for (auto& x : au) if (x.action == "SEARCH" && x.target == "f.txt" && x.detail == "1 file found") searchAudited = true;
+    CHECK(searchAudited);                                                                 // searches are also in the DB audit trail
+}
+
+
 int main() { return tf::runAll("integration"); }

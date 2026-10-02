@@ -35,7 +35,7 @@ ADM=$(awk '/^admin /{print $3}' config/demo-credentials.txt)
 FAC=$(awk '/^faculty1 /{print $3}' config/demo-credentials.txt)
 
 echo "== server start =="
-"$SERVER" --config server.conf --quiet &
+"$SERVER" "$PORT" --config server.conf > "$WORK/server.out" 2>&1 &   # positional PORT, console output captured
 SRV_PID=$!
 for i in $(seq 1 50); do (exec 3<>/dev/tcp/127.0.0.1/$PORT) 2>/dev/null && break; sleep 0.1; done
 (exec 3<>/dev/tcp/127.0.0.1/$PORT) 2>/dev/null && ok "server accepts TCP connections" || { bad "server did not start"; exit 1; }
@@ -77,11 +77,11 @@ quit
 EOF
 )
 expect "registration works"          "$out" "registered"
-expect "login works"                 "$out" "Logged in as newbie (STUDENT)"
+expect "login works"                 "$out" "Login successful! Role: STUDENT"
 expect "mkdir works"                 "$out" "directory created"
-expect "upload verified by server"   "$out" "upload complete"
+expect "upload verified by server"   "$out" "Upload completed successfully"
 expect "info shows SHA-256"          "$out" "$EXPECT_SHA"
-expect "download verified"           "$out" "SHA-256 verified"
+expect "download verified"           "$out" "Checksum: VERIFIED"
 expect "search finds file"           "$out" "/note.txt"
 expect "rename works"                "$out" "renamed to /renamed.txt"
 expect "history lists transfers"     "$out" "UPLOAD"
@@ -157,8 +157,33 @@ EOF
 done
 wait $PIDS
 good=0
-for i in 1 2 3 4 5 6; do grep -q "SHA-256 verified" "$WORK/par$i.out" && cmp -s blob.bin "par$i.dl" && good=$((good+1)); done
+for i in 1 2 3 4 5 6; do grep -q "Checksum: VERIFIED" "$WORK/par$i.out" && cmp -s blob.bin "par$i.dl" && good=$((good+1)); done
 [ "$good" = 6 ] && ok "6 concurrent clients all transferred correctly" || bad "only $good/6 concurrent clients succeeded"
+
+echo "== poster-style client session (prompted login, upper-case commands) =="
+out=$(printf 'faculty1\n%s\nLIST /public\nINFO /public/WELCOME.txt\nSYSINFO\nQUIT\n' "$FAC" | "$CLIENT" 127.0.0.1 "$PORT" --prompt-login 2>&1)
+expect "client prints connect banner"      "$out" "Connected to server 127.0.0.1:$PORT"
+expect "prompted login shows role"         "$out" "Login successful! Role: FACULTY"
+expect "LIST shows numbered listing"       "$out" "Server files:"
+expect "seeded /public file is listed"     "$out" "WELCOME.txt"
+expect "INFO shows Linux permissions"      "$out" "Permissions: -rw-r----- (0640)"
+expect "upper-case SYSINFO works"          "$out" "Server uptime"
+[ -d storage/public ] && [ -d storage/documents ] && [ -d storage/users ] && [ -d storage/temporary ] && ok "default storage layout exists on disk" || bad "default layout missing"
+[ -d storage/users/newbie ] && ok "home directory created for registered user" || bad "home directory missing"
+
+echo "== server console output (poster format) =="
+SO="$(cat "$WORK/server.out")"
+expect "startup banner"                    "$SO" "Network File Sharing Server"
+expect "banner shows port"                 "$SO" "Port     : $PORT"
+expect "banner shows status"               "$SO" "Status   : RUNNING"
+expect "waiting line"                      "$SO" "[INFO] Server started. Waiting for clients"
+expect "[CLIENT] connect line"             "$SO" "connected (newbie)"
+expect "[UPLOAD] line"                     "$SO" "[UPLOAD] newbie -> /docs/blob.bin (244.1 KiB) SUCCESS"
+expect "[DOWNLOAD] line"                   "$SO" "[DOWNLOAD] newbie <- /docs/blob.bin (244.1 KiB) SUCCESS"
+expect "[SEARCH] line"                     "$SO" "[SEARCH] newbie keyword: note (1 file found)"
+expect "[DELETE] line"                     "$SO" "[DELETE] newbie -> /renamed.txt SUCCESS"
+expect "[DENIED] line"                     "$SO" "[DENIED] "
+
 
 echo "== graceful shutdown on SIGINT =="
 "$CLIENT" --port "$PORT" < <(sleep 30) > /dev/null 2>&1 &   # an idle connected client

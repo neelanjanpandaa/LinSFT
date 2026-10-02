@@ -1,5 +1,6 @@
 // Unit tests: crypto vectors, protocol framing, path validation, RBAC matrix, SQLite layer.
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <cstdlib>
 #include <cstring>
@@ -235,9 +236,9 @@ TEST(shipped_config_file_parses) {
     std::string err;
     CHECK(c.loadFile(std::string(LINSFT_SOURCE_DIR) + "/config/server.conf", err));  // the file users actually get
     CHECK_EQ(c.bindAddress, std::string("127.0.0.1"));
-    CHECK_EQ(c.port, uint16_t(9090));
-    CHECK_EQ(c.storageDir, std::string("storage"));
-    CHECK_EQ(c.dbPath, std::string("data/linsft.db"));
+    CHECK_EQ(c.port, uint16_t(5000));
+    CHECK_EQ(c.storageDir, std::string("server_storage"));
+    CHECK_EQ(c.dbPath, std::string("database/file_sharing.db"));
     CHECK_EQ(c.maxFileSize, uint64_t(536870912));
     CHECK_EQ(c.pbkdf2Iterations, 100000u);
     char tmpl[] = "/tmp/linsft-cfg-XXXXXX";
@@ -252,5 +253,60 @@ TEST(shipped_config_file_parses) {
     CHECK(!e2.loadFile("/nonexistent/file.conf", err));
     unlink(tmpl);
 }
+
+#include "linsft/user.h"
+
+TEST(oop_user_hierarchy_polymorphism) {
+    Principal sp{1, "stu", Role::STUDENT}, fp{2, "fac", Role::FACULTY}, ap{3, "adm", Role::ADMIN};
+    std::unique_ptr<User> s = User::create(sp), f = User::create(fp), a = User::create(ap);
+    CHECK(dynamic_cast<Student*>(s.get()) != nullptr);
+    CHECK(dynamic_cast<Faculty*>(f.get()) != nullptr);
+    CHECK(dynamic_cast<Admin*>(a.get()) != nullptr);
+    CHECK_EQ(std::string(s->title()), std::string("Student"));
+    CHECK_EQ(std::string(a->title()), std::string("Admin"));
+    // canDelete() is virtual: same call, role-specific behaviour
+    CHECK(s->canDelete(1));  CHECK(!s->canDelete(2));
+    CHECK(f->canDelete(2));  CHECK(!f->canDelete(1));
+    CHECK(a->canDelete(1));  CHECK(a->canDelete(2)); CHECK(a->canDelete(99));
+    CHECK(!s->isLoggedIn()); s->login(); CHECK(s->isLoggedIn()); s->logout(); CHECK(!s->isLoggedIn());
+    CHECK_EQ(s->id(), int64_t(1)); CHECK_EQ(s->username(), std::string("stu")); CHECK(s->role() == Role::STUDENT);
+    // PermissionService delegates to the hierarchy, so both views agree
+    for (Principal p : {sp, fp, ap})
+        for (int64_t owner : {int64_t(1), int64_t(2), int64_t(3), int64_t(99)})
+            CHECK_EQ(PermissionService::canDeleteFile(p, owner), User::create(p)->canDelete(owner));
+}
+
+TEST(storage_layout_write_rules) {
+    Principal alice{1, "alice", Role::STUDENT}, bob{2, "Bob", Role::STUDENT}, adm{3, "root", Role::ADMIN};
+    CHECK(PermissionService::canWriteInto(alice, "/"));
+    CHECK(PermissionService::canWriteInto(alice, "/public"));
+    CHECK(PermissionService::canWriteInto(alice, "/documents/sub"));
+    CHECK(PermissionService::canWriteInto(alice, "/users/alice"));
+    CHECK(PermissionService::canWriteInto(alice, "/users/ALICE/sub"));      // names are case-insensitive like usernames
+    CHECK(!PermissionService::canWriteInto(alice, "/users/bob"));
+    CHECK(!PermissionService::canWriteInto(alice, "/users/bob/x"));
+    CHECK(!PermissionService::canWriteInto(alice, "/users"));
+    CHECK(!PermissionService::canWriteInto(bob, "/users/alice"));
+    CHECK(PermissionService::canWriteInto(bob, "/users/bob"));
+    CHECK(PermissionService::canWriteInto(adm, "/users/alice"));
+    CHECK(PermissionService::canWriteInto(adm, "/users"));
+    CHECK(PermissionService::isPublicPath("/public")); CHECK(PermissionService::isPublicPath("/public/a/b"));
+    CHECK(!PermissionService::isPublicPath("/publication")); CHECK(!PermissionService::isPublicPath("/documents"));
+    CHECK(!PermissionService::isPublicPath("/users/public"));
+}
+
+TEST(file_mode_formatting_and_username_rules) {
+    CHECK_EQ(modeString(S_IFREG | 0640), std::string("-rw-r-----"));
+    CHECK_EQ(modeString(S_IFDIR | 0750), std::string("drwxr-x---"));
+    CHECK_EQ(modeString(S_IFREG | 0777), std::string("-rwxrwxrwx"));
+    CHECK_EQ(modeOctal(S_IFREG | 0640), std::string("0640"));
+    CHECK(!isValidUsername(".hidden")); CHECK(!isValidUsername("-dash")); CHECK(!isValidUsername("_u_s"));  // must start alphanumeric
+    CHECK(isValidUsername("a.b-c_d")); CHECK(isValidUsername("9lives"));
+    FileEntry e; e.mode = S_IFREG | 0640; e.path = "/x"; e.name = "x";
+    Writer w; write(w, e);
+    Reader r(w.data());
+    CHECK_EQ(readFileEntry(r).mode, uint32_t(S_IFREG | 0640));            // mode survives the wire format
+}
+
 
 int main() { return tf::runAll("unit"); }

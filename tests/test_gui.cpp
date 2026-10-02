@@ -75,6 +75,8 @@ TEST(student_dashboard_all_actions) {
     CHECK(!w.button("Download")->isEnabled());                           // nothing selected -> disabled
     CHECK(!w.button("Delete")->isEnabled());
 
+    CHECK(rowOf(w.fileTable(), "public") >= 0);                          // default storage layout is visible
+    CHECK(rowOf(w.fileTable(), "documents") >= 0); CHECK(rowOf(w.fileTable(), "users") >= 0); CHECK(rowOf(w.fileTable(), "temporary") >= 0);
     CHECK(w.makeFolder("Docs"));
     CHECK(rowOf(w.fileTable(), "Docs") >= 0);
     CHECK(w.openDir("/Docs"));
@@ -88,6 +90,7 @@ TEST(student_dashboard_all_actions) {
     CHECK(w.button("Share / Unshare")->isEnabled()); CHECK(w.button("File Info")->isEnabled());
     CHECK(!w.button("Remove Folder")->isEnabled());                      // a file is selected
     CHECK(w.infoText("/Docs/report.txt").contains(QString::fromStdString(Sha256::hashHex(data))));
+    CHECK(w.infoText("/Docs/report.txt").contains("Permissions: -rw-r----- (0640)"));   // Linux mode bits shown
     QString out = QString::fromStdString(e.dir + "/dl.txt");
     CHECK(w.downloadTo("/Docs/report.txt", out, true));
     { std::ifstream f(out.toStdString(), std::ios::binary); std::stringstream ss; ss << f.rdbuf(); CHECK(ss.str() == data); }
