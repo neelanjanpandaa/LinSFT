@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
     parser.setApplicationDescription("LinSFT desktop client");
     parser.addHelpOption();
     QCommandLineOption hostOpt({"H", "host"}, "Server host", "host", "127.0.0.1");
-    QCommandLineOption portOpt({"p", "port"}, "Server port", "port", "9090");
+    QCommandLineOption portOpt({"p", "port"}, "Server port", "port", "5000");
     parser.addOption(hostOpt);
     parser.addOption(portOpt);
     parser.process(app);

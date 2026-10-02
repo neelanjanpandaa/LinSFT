@@ -381,6 +381,7 @@ QString MainWindow::infoText(const QString& path) {
     Result r = client_.info(path.toStdString(), e);
     if (!r.ok) { report(r); return QString(); }
     QString t = QString("Path: %1\nType: %2\nOwner: %3\n").arg(q(e.path), e.isDir ? "Directory" : "File", q(e.owner));
+    t += QString("Permissions: %1 (%2)\n").arg(q(modeString(e.mode)), q(modeOctal(e.mode)));
     if (!e.isDir)
         t += QString("Size: %1 bytes (%2)\nSHA-256: %3\nShared with everyone: %4\n")
                  .arg(e.size).arg(q(humanSize(e.size)), q(e.sha256), e.shared ? "yes" : "no");
