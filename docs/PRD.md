@@ -27,6 +27,11 @@ Linux system programming: sockets, threads, POSIX file I/O, signals, filesystem 
 | FR-11 | Multi-client concurrency | Done, tested (12 concurrent clients) |
 | FR-12 | Qt6 GUI and CLI client | Done, tested |
 | FR-13 | Graceful shutdown on SIGINT/SIGTERM | Done, tested |
+| FR-14 | Default storage layout (`public`, `documents`, `users`, `temporary`) and private per-user home directories | Done, tested |
+| FR-15 | Files uploaded to `/public` are auto-shared; foreign homes are write-protected | Done, tested |
+| FR-16 | File info shows Linux permission bits | Done, tested |
+| FR-17 | Abstract `User` with `Student`/`Faculty`/`Admin` (polymorphic `canDelete()`) | Done, tested |
+| FR-18 | Console activity log (`[CLIENT] [UPLOAD] [DOWNLOAD] [SEARCH] [DELETE] [DENIED]`) and startup banner | Done, tested |
 
 ## 4. Non-functional requirements
 Security (see `SECURITY.md`), Linux-only, C++17, builds with plain CMake, no network access needed at run time, deterministic automated tests,
