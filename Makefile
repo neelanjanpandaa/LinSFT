@@ -6,11 +6,11 @@ JOBS ?= $(shell nproc)
 
 all:
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake .. && $(MAKE) -j$(JOBS)
+	cd $(BUILD_DIR) && cmake .. && cmake --build . -j$(JOBS)
 
 nogui:
 	mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake .. -DLINSFT_BUILD_GUI=OFF && $(MAKE) -j$(JOBS)
+	cd $(BUILD_DIR) && cmake .. -DLINSFT_BUILD_GUI=OFF && cmake --build . -j$(JOBS)
 
 test: all
 	cd $(BUILD_DIR) && ctest --output-on-failure
