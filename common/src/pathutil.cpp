@@ -1,5 +1,6 @@
 #include "linsft/pathutil.h"
 
+#include <cctype>
 #include <vector>
 
 namespace linsft {
@@ -8,6 +9,7 @@ static void setErr(std::string* e, const char* m) { if (e) *e = m; }
 
 bool isValidUsername(const std::string& u, std::string* err) {
     if (u.size() < 3 || u.size() > 32) { setErr(err, "username must be 3-32 characters"); return false; }
+    if (!std::isalnum(static_cast<unsigned char>(u[0]))) { setErr(err, "username must start with a letter or digit"); return false; }
     for (unsigned char c : u) {
         bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
                   c == '_' || c == '.' || c == '-';

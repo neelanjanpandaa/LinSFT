@@ -19,6 +19,7 @@ struct FileEntry {
     std::string sha256;
     bool shared = false;
     int64_t created = 0, modified = 0;
+    uint32_t mode = 0;  // Linux st_mode of the stored file/dir (0 = not reported, e.g. in listings)
 };
 
 struct UserEntry {
@@ -61,5 +62,7 @@ KeyValues readKeyValues(Reader& r);
 
 std::string formatTime(int64_t unixSeconds);  // local "YYYY-MM-DD HH:MM:SS"
 std::string humanSize(uint64_t bytes);
+std::string modeString(uint32_t stMode);  // "-rw-r-----" style (ls -l)
+std::string modeOctal(uint32_t stMode);   // "0640"
 
 }  // namespace linsft

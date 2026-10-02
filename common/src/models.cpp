@@ -1,19 +1,21 @@
 #include "linsft/models.h"
 
-#include <ctime>
+#include <sys/stat.h>
+
 #include <cstdio>
+#include <ctime>
 
 namespace linsft {
 
 void write(Writer& w, const FileEntry& e) {
     w.i64(e.id).str(e.path).str(e.name).boolean(e.isDir).u64(e.size).i64(e.ownerId).str(e.owner)
-        .str(e.sha256).boolean(e.shared).i64(e.created).i64(e.modified);
+        .str(e.sha256).boolean(e.shared).i64(e.created).i64(e.modified).u32(e.mode);
 }
 FileEntry readFileEntry(Reader& r) {
     FileEntry e;
     e.id = r.i64(); e.path = r.str(); e.name = r.str(); e.isDir = r.boolean(); e.size = r.u64();
     e.ownerId = r.i64(); e.owner = r.str(); e.sha256 = r.str(); e.shared = r.boolean();
-    e.created = r.i64(); e.modified = r.i64();
+    e.created = r.i64(); e.modified = r.i64(); e.mode = r.u32();
     return e;
 }
 void write(Writer& w, const UserEntry& e) {
@@ -80,6 +82,26 @@ std::string humanSize(uint64_t b) {
     char buf[32];
     if (u == 0) std::snprintf(buf, sizeof buf, "%llu B", (unsigned long long)b);
     else std::snprintf(buf, sizeof buf, "%.1f %s", v, units[u]);
+    return buf;
+}
+
+}  // namespace linsft
+
+namespace linsft {
+
+std::string modeString(uint32_t m) {
+    std::string s(10, '-');
+    if (S_ISDIR(m)) s[0] = 'd';
+    else if (S_ISLNK(m)) s[0] = 'l';
+    const char* rwx = "rwxrwxrwx";
+    for (int i = 0; i < 9; ++i)
+        if (m & (1u << (8 - i))) s[size_t(i) + 1] = rwx[i];
+    return s;
+}
+
+std::string modeOctal(uint32_t m) {
+    char buf[8];
+    std::snprintf(buf, sizeof buf, "%04o", m & 07777);
     return buf;
 }
 

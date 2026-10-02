@@ -34,7 +34,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DI
 # ---- libraries -------------------------------------------------------------
 add_library(linsft_common STATIC
   common/src/crypto.cpp common/src/protocol.cpp common/src/pathutil.cpp
-  common/src/permissions.cpp common/src/models.cpp)
+  common/src/permissions.cpp common/src/models.cpp common/src/user.cpp)
 target_include_directories(linsft_common PUBLIC common/include)
 
 add_library(linsft_server_lib STATIC
@@ -50,18 +50,24 @@ target_link_libraries(linsft_client_lib PUBLIC linsft_common Threads::Threads)
 
 # ---- executables (also symlinked into the project root for convenience) ----
 function(linsft_root_link target)
+  # ./<target> plus optional extra alias names (e.g. file_server) as symlinks in the project root
   add_custom_command(TARGET ${target} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${target}> ${CMAKE_SOURCE_DIR}/$<TARGET_FILE_NAME:${target}>
     COMMENT "Linking ./${target}")
+  foreach(alias ${ARGN})
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${target}> ${CMAKE_SOURCE_DIR}/${alias}
+      COMMENT "Linking ./${alias}")
+  endforeach()
 endfunction()
 
 add_executable(network-file-server server/src/main.cpp)
 target_link_libraries(network-file-server PRIVATE linsft_server_lib)
-linsft_root_link(network-file-server)
+linsft_root_link(network-file-server file_server)
 
 add_executable(network-file-client client/src/cli_main.cpp)
 target_link_libraries(network-file-client PRIVATE linsft_client_lib)
-linsft_root_link(network-file-client)
+linsft_root_link(network-file-client file_client)
 
 # ---- Qt6 GUI ---------------------------------------------------------------
 set(LINSFT_GUI_ENABLED OFF)

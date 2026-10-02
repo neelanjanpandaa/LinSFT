@@ -50,6 +50,12 @@ public:
     static bool canDeleteFile(const Principal& p, int64_t ownerId);
     static bool canShare(const Principal& p, int64_t ownerId);
     static bool canRemoveDir(const Principal& p, int64_t ownerId);
+
+    // Storage layout rules (normalised virtual paths):
+    //  /users/<name>  private home: only <name> or an admin may create/upload inside; /users itself: admin only.
+    static bool canWriteInto(const Principal& p, const std::string& dirPath);
+    //  /public  uploads there are readable by everyone.
+    static bool isPublicPath(const std::string& dirPath);
 };
 
 }  // namespace linsft

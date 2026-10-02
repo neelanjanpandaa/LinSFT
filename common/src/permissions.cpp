@@ -1,5 +1,9 @@
 #include "linsft/permissions.h"
 
+#include <strings.h>
+
+#include "linsft/user.h"
+
 namespace linsft {
 
 const char* roleName(Role r) {
@@ -43,13 +47,31 @@ bool PermissionService::canRename(const Principal& p, int64_t ownerId) {
     return (ownerId == p.userId && has(p, Perm::RENAME_OWN)) || has(p, Perm::RENAME_ANY);
 }
 bool PermissionService::canDeleteFile(const Principal& p, int64_t ownerId) {
-    return (ownerId == p.userId && has(p, Perm::DELETE_OWN)) || has(p, Perm::DELETE_ANY);
+    return User::create(p)->canDelete(ownerId);  // polymorphic: Student / Faculty / Admin
 }
 bool PermissionService::canShare(const Principal& p, int64_t ownerId) {
     return (ownerId == p.userId && has(p, Perm::SHARE_OWN)) || has(p, Perm::RENAME_ANY);
 }
 bool PermissionService::canRemoveDir(const Principal& p, int64_t ownerId) {
     return (ownerId == p.userId && has(p, Perm::RMDIR_OWN)) || has(p, Perm::RMDIR_ANY);
+}
+
+}  // namespace linsft
+
+namespace linsft {
+
+bool PermissionService::canWriteInto(const Principal& p, const std::string& dirPath) {
+    if (has(p, Perm::MANAGE_USERS)) return true;  // admin
+    if (dirPath == "/users") return false;
+    const std::string prefix = "/users/";
+    if (dirPath.compare(0, prefix.size(), prefix) != 0) return true;
+    size_t end = dirPath.find('/', prefix.size());
+    std::string owner = dirPath.substr(prefix.size(), end == std::string::npos ? std::string::npos : end - prefix.size());
+    return strcasecmp(owner.c_str(), p.username.c_str()) == 0;
+}
+
+bool PermissionService::isPublicPath(const std::string& dirPath) {
+    return dirPath == "/public" || dirPath.compare(0, 8, "/public/") == 0;
 }
 
 }  // namespace linsft
