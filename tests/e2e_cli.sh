@@ -115,6 +115,7 @@ EOF
 )
 expect "faculty sysinfo works"             "$out" "Server uptime"
 expect "sysinfo shows /dev/urandom driver" "$out" "urandom"
+expect "sysinfo reports securemon driver status" "$out" "securemon driver"
 expect "faculty sees others' history"      "$out" "newbie"
 expect "faculty denied user mgmt"          "$out" "FORBIDDEN"
 out=$(cli <<EOF

@@ -35,7 +35,9 @@ Every request except `PING`, `REGISTER`, `LOGIN` begins with the session token.
 ## Linux device-driver relationship (honest statement)
 LinSFT is a user-space application. It touches kernel drivers only through their user-visible interfaces:
 `/dev/urandom` (char device, driver "mem"), `/sys/block/*` and `/proc/devices` (block devices and their registered drivers), `statvfs` (filesystem driver).
-A kernel module is **not** part of the project. If one were added, a character device (`/dev/linsft_stats`) exposing counters via `read()`/`ioctl()` could feed the same `SystemMonitor::snapshot()` interface without changing the rest of the architecture.
+An optional kernel module, `securemon` (`driver/`), adds a character device `/dev/securemon`. `SystemMonitor::snapshot()` reads it through the same interface and shows "not loaded" when it is absent, so the rest of the architecture is unchanged.
+
+Data flow: `CLI/GUI client -> SYSINFO request -> ConnectionHandler -> SystemMonitor::snapshot() -> readSecuremon() -> open/read /dev/securemon -> securemon.ko (kernel) -> kernel totals (si_meminfo, num_online_cpus, uptime, utsname)`.
 
 ## Software / hardware architecture notes
 Layered client–server design with a thin protocol boundary; the server is I/O bound (disk + network), so thread-per-client is adequate. Chunking bounds memory per transfer to 64 KiB regardless of file size, and `fsync` before publish gives durability against power loss.

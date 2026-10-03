@@ -10,7 +10,7 @@
 * **Product perspective.** Client–server. One server process, many clients over TCP (default port 5000). Storage: `server_storage/`. Database: `database/file_sharing.db`.
 * **User classes.** Student (default), Faculty, Admin — see the RBAC table in the README.
 * **Operating environment.** Ubuntu 24.04 / WSL2; g++ ≥ 13, CMake ≥ 3.16, SQLite 3, Qt 6 (optional, GUI only).
-* **Constraints.** C++17 only for application code; POSIX APIs; no kernel module; no external crypto library.
+* **Constraints.** C++17 only for application code; POSIX APIs; kernel module optional (`securemon`, see DRIVER.md); no external crypto library.
 * **Assumptions.** Trusted network or SSH tunnel (no TLS).
 
 ## 3. Functional requirements

@@ -11,6 +11,7 @@
 #include "linsft/pathutil.h"
 #include "linsft/permissions.h"
 #include "linsft/protocol.h"
+#include "linsft/system_monitor.h"
 #include "test_framework.h"
 
 using namespace linsft;
@@ -308,5 +309,29 @@ TEST(file_mode_formatting_and_username_rules) {
     CHECK_EQ(readFileEntry(r).mode, uint32_t(S_IFREG | 0640));            // mode survives the wire format
 }
 
+
+// EMULATED: a plain file stands in for /dev/securemon. This tests only the user-space parser;
+// it is NOT kernel-module verification (see scripts/vm_verify_driver.sh for the real test).
+TEST(securemon_reader_parses_emulated_device_file) {
+    char path[] = "/tmp/linsft-securemon-XXXXXX";
+    int fd = ::mkstemp(path);
+    CHECK(fd >= 0);
+    const char* txt = "securemon_version=1.0\nuptime_s=42\nonline_cpus=4\nbad line without equals\nkernel_release=6.8.0-x\n";
+    CHECK(::write(fd, txt, std::strlen(txt)) == ssize_t(std::strlen(txt)));
+    ::close(fd);
+    DriverReading r = readSecuremon(path);
+    ::unlink(path);
+    CHECK(r.available);
+    CHECK_EQ(r.values.size(), size_t(4));
+    CHECK_EQ(r.values[1].first, std::string("uptime_s"));
+    CHECK_EQ(r.values[1].second, std::string("42"));
+}
+
+TEST(securemon_reader_reports_missing_device) {
+    DriverReading r = readSecuremon("/dev/securemon-does-not-exist");
+    CHECK(!r.available);
+    CHECK(!r.error.empty());
+    CHECK(r.values.empty());
+}
 
 int main() { return tf::runAll("unit"); }

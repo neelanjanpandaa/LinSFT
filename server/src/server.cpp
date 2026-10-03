@@ -50,6 +50,7 @@ bool ServerConfig::loadFile(const std::string& path, std::string& err) {
             else if (k == "session_ttl_seconds") sessionTtlSeconds = std::stoi(v);
             else if (k == "pbkdf2_iterations") { pbkdf2Iterations = uint32_t(std::stoul(v)); if (pbkdf2Iterations < 1000) throw std::out_of_range("pbkdf2_iterations"); }
             else if (k == "idle_timeout_seconds") idleTimeoutSeconds = std::stoi(v);
+            else if (k == "driver_path") driverPath = v;
             else { err = path + ":" + std::to_string(ln) + ": unknown key '" + k + "'"; return false; }
         } catch (const std::exception&) {
             err = path + ":" + std::to_string(ln) + ": invalid value for '" + k + "'";

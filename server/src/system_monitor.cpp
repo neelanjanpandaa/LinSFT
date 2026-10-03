@@ -1,6 +1,8 @@
 #include "linsft/system_monitor.h"
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <cerrno>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/sysmacros.h>
@@ -22,6 +24,29 @@ static std::string readFirstLine(const std::string& path) {
     std::string line;
     if (f) std::getline(f, line);
     return line;
+}
+
+DriverReading readSecuremon(const std::string& devicePath) {
+    DriverReading r;
+    int fd = ::open(devicePath.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) { r.error = std::strerror(errno); return r; }
+    char buf[4096];
+    std::string text;
+    ssize_t n;
+    while ((n = ::read(fd, buf, sizeof buf)) > 0) { text.append(buf, size_t(n)); if (text.size() > 65536) break; }
+    int rerr = errno;
+    ::close(fd);
+    if (n < 0) { r.error = std::strerror(rerr); return r; }
+    std::istringstream ss(text);
+    std::string line;
+    while (std::getline(ss, line)) {
+        size_t eq = line.find('=');
+        if (eq == std::string::npos || eq == 0) continue;
+        r.values.emplace_back(line.substr(0, eq), line.substr(eq + 1));
+    }
+    if (r.values.empty()) { r.error = "device returned no key=value data"; return r; }
+    r.available = true;
+    return r;
 }
 
 static std::string kbToHuman(unsigned long long kb) { return humanSize(kb * 1024ULL); }
@@ -133,6 +158,18 @@ KeyValues SystemMonitor::snapshot(size_t activeSessions) {
             if (++shown >= 8) break;
         }
         add("Block devices listed", std::to_string(shown) + " (from /sys/block, loop/ram excluded)");
+    }
+
+    // --- LinSFT kernel module "securemon" (optional): values produced inside the kernel ---
+    DriverReading dr = readSecuremon(driverPath_);
+    if (dr.available) {
+        add("securemon driver", "online (" + driverPath_ + ")");
+        for (auto& p : dr.values) {
+            std::string k = p.first.rfind("securemon_", 0) == 0 ? p.first.substr(10) : p.first;  // "securemon_version" -> "version"
+            add("securemon " + k, p.second);
+        }
+    } else {
+        add("securemon driver", "not loaded (" + driverPath_ + ": " + dr.error + ")");
     }
     return kv;
 }

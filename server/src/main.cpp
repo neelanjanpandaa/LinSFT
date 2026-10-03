@@ -28,6 +28,7 @@ static void usage() {
         "  --config FILE        configuration file (default: config/server.conf if present)\n"
         "  --port N             override listening port\n"
         "  --bind ADDR          override bind address (default 127.0.0.1)\n"
+        "  --driver PATH        securemon device node (default /dev/securemon)\n"
         "  --quiet              do not echo the log to the console\n"
         "  --init-admin USER    create (or reset the password of) an ADMIN account, then exit.\n"
         "                       Password is read from $LINSFT_ADMIN_PASSWORD or prompted.\n"
@@ -119,7 +120,7 @@ int main(int argc, char** argv) {
     std::string configPath, err, initAdminUser;
     bool seed = false, quiet = false;
     int portOverride = -1;
-    std::string bindOverride;
+    std::string bindOverride, driverOverride;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&](const char* what) -> std::string {
@@ -131,6 +132,7 @@ int main(int argc, char** argv) {
         else if (a == "--config") configPath = next("--config");
         else if (a == "--port") portOverride = std::atoi(next("--port").c_str());
         else if (a == "--bind") bindOverride = next("--bind");
+        else if (a == "--driver") driverOverride = next("--driver");
         else if (a == "--quiet") quiet = true;
         else if (a == "--init-admin") initAdminUser = next("--init-admin");
         else if (a == "--seed-demo") seed = true;
@@ -147,6 +149,7 @@ int main(int argc, char** argv) {
         cfg.port = uint16_t(portOverride);
     }
     if (!bindOverride.empty()) cfg.bindAddress = bindOverride;
+    if (!driverOverride.empty()) cfg.driverPath = driverOverride;
     if (quiet) cfg.logToConsole = false;
 
     // SIGINT/SIGTERM request a graceful shutdown; SIGPIPE must never kill the server.

@@ -5,7 +5,7 @@ binary protocol, SQLite metadata, role-based access control, SHA-256 integrity c
 desktop GUI and a full command-line client.
 
 > **Platform:** Ubuntu 24.04 / WSL2 Ubuntu 24.04. **Application language:** C++17 only (build scripts are Bash/CMake).
-> **Kernel note:** LinSFT does **not** ship or require a kernel module. See [Linux Device Driver concepts](#5-linux-concepts-used) for what it honestly does instead.
+> **Kernel note:** LinSFT ships an **optional** Linux kernel module, `securemon` (`driver/`). The application works without it; see [driver docs](docs/DRIVER.md). Runtime status of the module is recorded only in `evidence/driver/` after `scripts/vm_verify_driver.sh` has been run on a real Linux VM. See [Linux Device Driver concepts](#5-linux-concepts-used) for what it honestly does instead.
 
 ---
 
@@ -203,12 +203,14 @@ No third-party crypto library: SHA-256, HMAC and PBKDF2 are implemented in `comm
 
 ### Linux Device Driver concepts — what is real and what is not
 
-* **No kernel module is included, and none is claimed.** Writing one would require kernel headers, `insmod` privileges and (on WSL2) a custom kernel — unsafe and unnecessary for this project.
-* **What LinSFT genuinely does with drivers (from user space):**
+* **Optional kernel module `securemon`** (`driver/securemon.c`, `driver/Makefile`): a character device `/dev/securemon` (dynamic major, read-only mode 0444) implementing `open`, `read` and `release` only — no `write`, `ioctl`, procfs or sysfs interface. `read()` returns key=value text (uptime, online CPUs, total/free RAM, kernel release, page size, HZ, open/read counters) produced inside the kernel.
+* **Integration:** `SystemMonitor::snapshot()` reads the device on every `SYSINFO` request and shows `securemon ...` lines; if the module is not loaded it shows `securemon driver = not loaded (<reason>)` and everything else works unchanged. Path is configurable (`driver_path` in `config/server.conf`, or `--driver PATH`).
+* **Verification status:** loading a module needs a real Linux kernel with matching headers and root; it cannot be done in WSL2's default kernel or a container. Run `sudo scripts/vm_verify_driver.sh` on an Ubuntu VM; results land in `evidence/driver/`. Until that has been run, the driver is *implemented but not runtime-verified*.
+* **What LinSFT also does with drivers (from user space, always available):**
   * Reads entropy from the **`/dev/urandom` character device** (`open`/`read`) for salts and session tokens. The System Monitor shows its major/minor numbers and the kernel driver that owns that major, parsed from `/proc/devices`.
   * Enumerates **block devices** through sysfs (`/sys/block/*/size`, `queue/rotational`, `dev`) and maps their major numbers to block drivers via `/proc/devices`.
   * Queries the storage filesystem with `statvfs(2)`.
-* Architecture note (documented, not implemented): a char-device driver exposing transfer counters via `ioctl` would sit below the same user-space `SystemMonitor` interface; see `docs/ARCHITECTURE.md`.
+* Limitations of the module: read-only text interface, no ioctl, one device, not signed (fails to load under Secure Boot unless signed).
 
 ## 6. Security model
 
@@ -425,7 +427,7 @@ See [`docs/TESTING.md`](docs/TESTING.md) for the manual test plan and results.
 * Transfers are not resumable; one request in flight per connection (up to 8 open transfers).
 * No quotas. Directory removal requires an empty directory (no recursive delete).
 * The GUI performs network calls on the UI thread (it stays responsive during transfers via a progress dialog, but a stalled server blocks the window until the 30 s timeout).
-* No kernel module (see section 5).
+* The optional `securemon` kernel module is implemented but only runtime-verified once `evidence/driver/` has been produced on a real Linux VM (see section 5).
 
 ## 17. Future enhancements
 

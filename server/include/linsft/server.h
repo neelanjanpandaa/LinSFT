@@ -29,6 +29,7 @@ struct ServerConfig {
     int sessionTtlSeconds = 1800;
     uint32_t pbkdf2Iterations = 100000;
     int idleTimeoutSeconds = 300;
+    std::string driverPath = "/dev/securemon";   // optional securemon kernel-module device
     bool logToConsole = true;
 
     // key = value lines; '#' comments. Returns false with err on unreadable file / bad value.
@@ -39,7 +40,7 @@ struct Services {
     explicit Services(const ServerConfig& c)
         : cfg(c), audit(db), auth(db, c.pbkdf2Iterations, c.sessionTtlSeconds),
           files(db, c.storageDir), transfers(db, files, stats, c.maxFileSize),
-          sysmon(c.storageDir, stats, long(time(nullptr))) {}
+          sysmon(c.storageDir, stats, long(time(nullptr))) { sysmon.setDriverPath(c.driverPath); }
     ServerConfig cfg;
     DatabaseManager db;
     AuditLogger audit;

@@ -38,7 +38,7 @@ Security (see `SECURITY.md`), Linux-only, C++17, builds with plain CMake, no net
 protocol payload cap 1 MiB, files never fully loaded into memory (64 KiB chunks), documented demo procedure.
 
 ## 5. Out of scope
-TLS transport, kernel modules, resumable transfers, quotas, web UI.
+TLS transport, resumable transfers, quotas, web UI.
 
 ## 6. Success criteria
 `cmake && make` succeeds from a clean tree, `ctest` passes, and the 5–10 minute demo in `DEMO.md` can be performed by one person.
