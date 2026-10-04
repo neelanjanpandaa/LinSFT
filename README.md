@@ -400,10 +400,12 @@ cd build && ctest --output-on-failure        # runs all four suites (GUI suite u
 
 | Suite | What it proves |
 |---|---|
-| `test_unit` (16 cases, 247 checks) | SHA-256 / HMAC / PBKDF2 against NIST & RFC vectors, protocol framing, malformed-frame handling over real sockets, path validation, full RBAC matrix, SQLite prepared statements, SQL-injection strings, transactions |
+| `test_unit` (18 cases, 256 checks) | SHA-256 / HMAC / PBKDF2 against NIST & RFC vectors, protocol framing, malformed-frame handling over real sockets, path validation, full RBAC matrix, SQLite prepared statements, SQL-injection strings, transactions |
 | `test_integration` (27 cases, 624 checks) | A real server on a real TCP port: register/login/logout, token replay/forgery, lockout, upload/download + SHA-256 (empty, odd-size, chunk-aligned files), checksum mismatch, tampered storage, path traversal, symlink planting, ownership & visibility, rename/delete/mkdir/rmdir/search/info, history scoping, admin user management, audit trail, hostile network input, mid-transfer disconnect, 12 concurrent clients, client limit, graceful shutdown, persistence, crash recovery, Unicode names |
 | `test_gui` (6 cases, 110 checks) | Real Qt widgets (offscreen): login dialog, every dashboard action against a live server, role-based tab/button visibility, session loss |
-| `test_e2e_cli` (57 checks) | The real `network-file-server` and `network-file-client` binaries: admin init, demo seeding, full user flow, faculty/admin features, 6 parallel CLI clients, **SIGINT** shutdown (exit code 0, port closed, no staging files) |
+| `test_e2e_cli` (58 checks) | The real `network-file-server` and `network-file-client` binaries: admin init, demo seeding, full user flow, faculty/admin features, 6 parallel CLI clients, **SIGINT** shutdown (exit code 0, port closed, no staging files) |
+
+**Latest verification result:** 1,048 automated checks passed, 0 failed (Unit 256 + Integration 624 + GUI 110 + E2E CLI 58).
 
 See [`docs/TESTING.md`](docs/TESTING.md) for the manual test plan and results.
 
